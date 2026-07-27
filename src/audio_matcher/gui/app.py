@@ -32,7 +32,7 @@ class MainWindow(tb.Window):
     """主程序窗口。"""
 
     def __init__(self, themename: str = "darkly") -> None:
-        super().__init__(themename=themename, title="音频匹配器 v0.0.2", size=(1100, 700))
+        super().__init__(themename=themename, title="音频匹配器 v0.0.3", size=(1100, 700))
         self.config = Config()
 
         # Asyncio 后台线程桥接

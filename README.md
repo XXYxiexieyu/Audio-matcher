@@ -1,11 +1,11 @@
-# Audio Matcher v0.0.1
+# Audio Matcher v0.0.3
 
 Batch audio file identification, metadata tagging, and synced lyrics (LRC) downloader.
 
 ## Features
 
 - **Audio identification** via Shazam fingerprinting and MusicBrainz/AcoustID
-- **Multi-format support**: FLAC, WAV, DSD (.dsf, .dff)
+- **Multi-format support**: FLAC, WAV, MP3, DSD (.dsf, .dff), M4A, AAC, OGG, WMA, AIFF
 - **Synced LRC lyrics** from LRCLIB, NetEase Cloud Music, and QQ Music
 - **Automatic metadata tagging**: writes TITLE, ARTIST, ALBUM, YEAR, TRACKNUMBER, LYRICS tags
 - **Batch processing** with async parallel workers and progress bar
@@ -48,9 +48,14 @@ python -m audio_matcher.gui.app
 | Format | Extension | Tag Type | Lyrics Tag |
 |--------|-----------|----------|------------|
 | FLAC   | .flac     | Vorbis   | LYRICS     |
+| MP3    | .mp3      | ID3v2    | USLT       |
 | WAV    | .wav      | ID3v2    | USLT       |
 | DSD    | .dsf      | ID3v2    | USLT       |
 | DSD    | .dff      | ID3v2    | USLT       |
+| M4A    | .m4a      | MP4      | ©lyr       |
+| AAC    | .aac      | ID3v2    | USLT       |
+| OGG    | .ogg      | Vorbis   | LYRICS     |
+| AIFF   | .aiff     | ID3v2    | USLT       |
 
 ## License
 

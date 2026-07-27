@@ -1,4 +1,8 @@
-"""Metadata tagger — writes tags to audio files via mutagen."""
+"""Metadata tagger — writes tags to audio files via mutagen.
+
+Supported formats: FLAC (.flac), WAV (.wav), DSD (.dsf/.dff), MP3 (.mp3),
+M4A (.m4a), AAC (.aac), OGG (.ogg), WMA (.wma), AIFF (.aiff)
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from typing import Optional
 from audio_matcher.core.config import Config
 from audio_matcher.core.models import (
     AudioFile,
+    AudioFormat,
     SyncedLyrics,
     TrackMatch,
 )
@@ -43,7 +48,6 @@ class AudioTagger:
             logger.info("[DRY RUN] Would tag: %s → %s - %s", file.path.name, match.artist, match.title)
             return True
 
-        # Backup if configured.
         if self.config.backup_original:
             self._backup(file.path)
 
@@ -52,12 +56,11 @@ class AudioTagger:
             if mf is None:
                 raise TagError(f"Unsupported format: {file.format.value}")
 
-            self._write_tags(mf, match)
+            self._write_tags(mf, file.format, match)
             if lyrics and lyrics.raw_lrc:
-                self._write_lyrics(mf, lyrics.raw_lrc)
+                self._write_lyrics(mf, file.format, lyrics.raw_lrc)
             mf.save()
 
-            # Write LRC sidecar.
             if self.config.write_lrc_sidecar and lyrics and lyrics.raw_lrc:
                 self._write_lrc_sidecar(file.path, lyrics.raw_lrc)
 
@@ -75,9 +78,10 @@ class AudioTagger:
         import mutagen
         return mutagen.File(str(path))
 
-    @staticmethod
-    def _write_tags(mf, match: TrackMatch) -> None:
-        """Write the six standard fields."""
+    @classmethod
+    def _write_tags(cls, mf, fmt: AudioFormat, match: TrackMatch) -> None:
+        """Write the six standard fields, format-aware."""
+        # Most formats work with generic mutagen key assignment.
         if match.title:
             mf["title"] = match.title
         if match.artist:
@@ -89,10 +93,41 @@ class AudioTagger:
         if match.track_number:
             mf["tracknumber"] = str(match.track_number)
 
-    @staticmethod
-    def _write_lyrics(mf, raw_lrc: str) -> None:
-        """Embed lyrics text in the file."""
-        mf["lyrics"] = raw_lrc
+    @classmethod
+    def _write_lyrics(cls, mf, fmt: AudioFormat, raw_lrc: str) -> None:
+        """Embed lyrics text, using format-appropriate frames."""
+        import mutagen.id3
+
+        # For ID3-based formats (MP3, WAV, DSF, DFF, AIFF), use USLT frame.
+        if fmt in (AudioFormat.MP3, AudioFormat.WAV, AudioFormat.DSF, AudioFormat.DFF, AudioFormat.AIFF):
+            try:
+                if hasattr(mf, "tags") and mf.tags is not None:
+                    # Remove existing USLT frames.
+                    for key in list(mf.tags.keys()):
+                        if key.startswith("USLT"):
+                            del mf.tags[key]
+                    mf.tags.add(
+                        mutagen.id3.USLT(
+                            encoding=3,
+                            lang="eng",
+                            desc="",
+                            text=raw_lrc,
+                        )
+                    )
+                    return
+            except Exception:
+                pass
+
+        # For Vorbis-based formats (FLAC, OGG), use LYRICS tag.
+        if fmt in (AudioFormat.FLAC, AudioFormat.OGG):
+            mf["lyrics"] = raw_lrc
+            return
+
+        # Fallback: generic assignment.
+        try:
+            mf["lyrics"] = raw_lrc
+        except Exception:
+            logger.debug("Could not embed lyrics for format %s", fmt.value)
 
     @staticmethod
     def _write_lrc_sidecar(audio_path: Path, raw_lrc: str) -> None:

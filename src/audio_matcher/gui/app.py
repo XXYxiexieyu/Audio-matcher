@@ -1,0 +1,154 @@
+"""Audio Matcher GUI — main application window.
+
+Usage:
+    python -m audio_matcher.gui.app
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+from pathlib import Path
+from typing import Optional
+
+import ttkbootstrap as tb
+from ttkbootstrap.constants import *
+
+from audio_matcher.core.config import Config
+from audio_matcher.core.models import ProcessingStatus, TrackMatch, TrackResult
+from audio_matcher.core.tagger import AudioTagger
+
+from audio_matcher.gui.widgets.folder_selector import FolderSelector
+from audio_matcher.gui.widgets.track_table import TrackTable
+from audio_matcher.gui.widgets.tag_editor import TagEditor
+from audio_matcher.gui.widgets.lyrics_viewer import LyricsViewer
+from audio_matcher.gui.widgets.progress_panel import ProgressPanel
+
+logger = logging.getLogger("audio_matcher.gui")
+
+
+class MainWindow(tb.Window):
+    """Root application window."""
+
+    def __init__(self, themename: str = "darkly") -> None:
+        super().__init__(themename=themename, title="Audio Matcher v0.0.1", size=(1100, 700))
+        self.config = Config()
+
+        # Asyncio bridge.
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
+        self._start_async_loop()
+
+        self._build()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── Async bridge ─────────────────────────────────────────────────────
+
+    def _start_async_loop(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def _run_async(self, coro, callback=None) -> None:
+        """Schedule a coroutine on the background loop."""
+        async def _wrapper():
+            try:
+                result = await coro
+                if callback:
+                    self.after(0, callback, result)
+            except Exception as exc:
+                self.after(0, lambda: self._log.log(f"Error: {exc}"))
+
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(_wrapper(), self._loop)
+
+    def _on_close(self) -> None:
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        self.destroy()
+
+    # ── Layout ───────────────────────────────────────────────────────────
+
+    def _build(self) -> None:
+        # Sidebar (left).
+        sidebar = tb.Frame(self, width=220, padding=10)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+
+        self._folder_selector = FolderSelector(sidebar, on_scan=self._on_scan)
+        self._folder_selector.pack(fill="both", expand=True)
+
+        # Main content area.
+        content = tb.Frame(self, padding=5)
+        content.pack(side="left", fill="both", expand=True)
+
+        # Top: track table.
+        self._track_table = TrackTable(content, on_select=self._on_track_select)
+        self._track_table.pack(fill="both", expand=True, pady=(0, 5))
+
+        # Bottom pane: editor + lyrics.
+        bottom = tb.Frame(content)
+        bottom.pack(fill="x", pady=(0, 5))
+
+        self._tag_editor = TagEditor(bottom, on_write=self._on_write_tags)
+        self._tag_editor.pack(side="left", fill="both", expand=True, padx=(0, 5))
+
+        self._lyrics_viewer = LyricsViewer(bottom)
+        self._lyrics_viewer.pack(side="right", fill="both", expand=True, padx=(5, 0))
+
+        # Progress panel (bottom strip).
+        self._log = ProgressPanel(content)
+        self._log.pack(fill="x")
+
+    # ── Event handlers ───────────────────────────────────────────────────
+
+    def _on_scan(self, path: Path, recursive: bool, dry_run: bool) -> None:
+        self._log.set_status("Scanning...")
+        self._log.log(f"Scanning: {path}")
+        self._track_table.set_results([])
+
+        async def _scan_pipeline():
+            from audio_matcher.core.pipeline import Pipeline
+            pipeline = Pipeline(self.config)
+            return await pipeline.run(path, dry_run=dry_run)
+
+        def _on_done(results):
+            self._track_table.set_results(results)
+            tagged = sum(1 for r in results if r.status == ProcessingStatus.TAGGED)
+            errors = sum(1 for r in results if r.status == ProcessingStatus.ERROR)
+            self._log.set_status(f"Done: {tagged} tagged, {errors} errors")
+            self._log.log(f"Scan complete: {len(results)} files, {tagged} tagged, {errors} errors")
+
+        self._run_async(_scan_pipeline(), _on_done)
+
+    def _on_track_select(self, result: TrackResult) -> None:
+        self._tag_editor.load(result)
+        if result.lyrics:
+            self._lyrics_viewer.set_lyrics(result.lyrics.raw_lrc)
+        else:
+            self._lyrics_viewer.clear()
+
+    def _on_write_tags(self, result: TrackResult) -> None:
+        tagger = AudioTagger(self.config)
+        try:
+            tagger.write(result.audio_file, result.match, result.lyrics)
+            result.status = ProcessingStatus.TAGGED
+            self._log.log(f"Tags written: {result.audio_file.path.name}")
+            self._log.set_status(f"Tagged: {result.audio_file.path.name}")
+        except Exception as exc:
+            self._log.log(f"Error writing tags: {exc}")
+
+
+def main() -> None:
+    """Launch the GUI."""
+    app = MainWindow()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

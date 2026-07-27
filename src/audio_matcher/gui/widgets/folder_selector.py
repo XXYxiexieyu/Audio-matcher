@@ -10,9 +10,10 @@ from tkinter import filedialog, ttk
 class FolderSelector(ttk.Frame):
     """侧边栏控件：浏览并选择音乐目录。"""
 
-    def __init__(self, parent, *, on_scan: callable = None, **kwargs) -> None:
+    def __init__(self, parent, *, on_scan: callable = None, on_restore: callable = None, **kwargs) -> None:
         super().__init__(parent, **kwargs)
         self._on_scan = on_scan
+        self._on_restore_cb = on_restore
         self._selected_path: Path | None = None
         self._build()
 
@@ -41,36 +42,43 @@ class FolderSelector(ttk.Frame):
         # 分隔线
         ttk.Separator(self, orient="horizontal").pack(fill="x", pady=10)
 
-        # 选项 — 使用 tk.Checkbutton 以显示清晰 √
+        # 选项 — ttkbootstrap Checkbutton with round-toggle for clear √ feedback.
         opt_frame = ttk.Frame(self)
         opt_frame.pack(fill="x", padx=5)
 
+        import ttkbootstrap as tb
+
         self._recursive_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
+        cb1 = tb.Checkbutton(
             opt_frame, text="递归子目录",
             variable=self._recursive_var,
-            selectcolor=self._get_bg(),
-            activebackground=self._get_bg(),
-            highlightthickness=0,
-        ).pack(anchor="w")
+            bootstyle="round-toggle",
+        )
+        cb1.pack(anchor="w", pady=2)
 
         self._rename_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
+        cb2 = tb.Checkbutton(
             opt_frame, text="重命名为 艺人 - 歌名",
             variable=self._rename_var,
-            selectcolor=self._get_bg(),
-            activebackground=self._get_bg(),
-            highlightthickness=0,
-        ).pack(anchor="w", pady=(2, 0))
+            bootstyle="round-toggle",
+        )
+        cb2.pack(anchor="w", pady=2)
 
         self._dry_run_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(
+        cb3 = tb.Checkbutton(
             opt_frame, text="仅预览（不写入）",
             variable=self._dry_run_var,
-            selectcolor=self._get_bg(),
-            activebackground=self._get_bg(),
-            highlightthickness=0,
-        ).pack(anchor="w", pady=(2, 0))
+            bootstyle="round-toggle",
+        )
+        cb3.pack(anchor="w", pady=2)
+
+        # 恢复文件名按钮
+        btn_restore = tb.Button(
+            opt_frame, text="恢复原始文件名",
+            command=self._on_restore,
+            bootstyle="warning-outline",
+        )
+        btn_restore.pack(anchor="w", pady=(10, 0))
 
     def _on_browse(self) -> None:
         path_str = filedialog.askdirectory(title="选择音乐目录")
@@ -88,15 +96,9 @@ class FolderSelector(ttk.Frame):
                 rename_files=self._rename_var.get(),
             )
 
-    @staticmethod
-    def _get_bg() -> str:
-        """Try to get the current theme's background color."""
-        try:
-            import ttkbootstrap as tb
-            style = tb.Style()
-            return style.colors.bg
-        except Exception:
-            return "#2b3e50"  # darkly theme default
+    def _on_restore(self) -> None:
+        if self._on_restore_cb and self._selected_path:
+            self._on_restore_cb(self._selected_path)
 
     @property
     def selected_path(self) -> Path | None:

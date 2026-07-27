@@ -80,7 +80,7 @@ class MainWindow(tb.Window):
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
-        self._folder_selector = FolderSelector(sidebar, on_scan=self._on_scan)
+        self._folder_selector = FolderSelector(sidebar, on_scan=self._on_scan, on_restore=self._on_restore)
         self._folder_selector.pack(fill="both", expand=True)
 
         # 主内容区
@@ -150,6 +150,34 @@ class MainWindow(tb.Window):
             self._lyrics_viewer.set_lyrics(result.lyrics.raw_lrc)
         else:
             self._lyrics_viewer.clear()
+
+    def _on_restore(self, path: Path) -> None:
+        """Restore original filenames from _track_mapping.txt."""
+        mapping_file = path / "_track_mapping.txt"
+        if not mapping_file.exists():
+            self._log.log(f"未找到映射文件：{mapping_file}")
+            return
+
+        restored = 0
+        for line in mapping_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            left, right = line.split("=", 1)
+            original = left.strip()
+            target = right.strip()
+            original_path = path / original
+            target_path = path / target
+            if target_path.exists() and not original_path.exists():
+                try:
+                    target_path.rename(original_path)
+                    self._log.log(f"恢复：{target} → {original}")
+                    restored += 1
+                except OSError as exc:
+                    self._log.log(f"恢复失败 {target}: {exc}")
+
+        self._log.set_status(f"已恢复 {restored} 个文件名")
+        self._log.log(f"文件名恢复完成：{restored} 个文件")
 
     def _on_write_tags(self, result: TrackResult) -> None:
         tagger = AudioTagger(self.config)

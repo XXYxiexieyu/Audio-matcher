@@ -56,6 +56,9 @@ class AudioTagger:
             if mf is None:
                 raise TagError(f"Unsupported format: {file.format.value}")
 
+            # Clear all existing tags first to avoid stale metadata.
+            self._clear_tags(mf)
+
             self._write_tags(mf, file.format, match)
             if lyrics and lyrics.raw_lrc:
                 self._write_lyrics(mf, file.format, lyrics.raw_lrc)
@@ -71,6 +74,20 @@ class AudioTagger:
             raise TagError(str(exc)) from exc
 
     # ── Internals ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _clear_tags(mf) -> None:
+        """Remove all existing tags from the file."""
+        try:
+            mf.delete()
+        except Exception:
+            # Fallback: clear keys individually.
+            keys = list(mf.keys()) if hasattr(mf, "keys") else []
+            for k in keys:
+                try:
+                    del mf[k]
+                except Exception:
+                    pass
 
     @staticmethod
     def _open_mutagen(path: Path):

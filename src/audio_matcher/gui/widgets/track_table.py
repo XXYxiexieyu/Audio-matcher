@@ -1,4 +1,4 @@
-"""Track table widget — displays scan results in a Treeview."""
+"""曲目表格控件 — 以 Treeview 展示扫描结果。"""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ from audio_matcher.core.models import ProcessingStatus, TrackResult
 
 
 class TrackTable(ttk.Frame):
-    """Scrollable table of scanned tracks with match results."""
+    """可滚动的曲目表，显示识别匹配结果。"""
 
     COLUMNS = ("status", "filename", "title", "artist", "album", "confidence")
     COLUMN_LABELS = {
-        "status": "Status",
-        "filename": "File",
-        "title": "Title",
-        "artist": "Artist",
-        "album": "Album",
-        "confidence": "Conf",
+        "status": "状态",
+        "filename": "文件",
+        "title": "标题",
+        "artist": "艺人",
+        "album": "专辑",
+        "confidence": "置信度",
     }
     COLUMN_WIDTHS = {
         "status": 50,
@@ -37,7 +37,7 @@ class TrackTable(ttk.Frame):
         self._build()
 
     def _build(self) -> None:
-        # Treeview.
+        # Treeview
         self._tree = ttk.Treeview(
             self, columns=self.COLUMNS, show="headings", selectmode="browse",
         )
@@ -45,27 +45,27 @@ class TrackTable(ttk.Frame):
             self._tree.heading(col, text=self.COLUMN_LABELS[col])
             self._tree.column(col, width=self.COLUMN_WIDTHS[col], anchor="w")
 
-        # Scrollbar.
+        # 滚动条
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=scrollbar.set)
 
         self._tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Bind selection.
+        # 绑定选择事件
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
 
     def set_results(self, results: list[TrackResult]) -> None:
-        """Replace all rows with *results*."""
+        """用结果列表替换全部行。"""
         self._tree.delete(*self._tree.get_children())
         self._results = results
         self._result_map.clear()
 
         status_icons = {
-            ProcessingStatus.TAGGED: "OK",
+            ProcessingStatus.TAGGED: "✓",
             ProcessingStatus.RECOGNIZED: "~",
             ProcessingStatus.LYRICS_FETCHED: "~",
-            ProcessingStatus.ERROR: "ERR",
+            ProcessingStatus.ERROR: "✗",
             ProcessingStatus.PENDING: "...",
             ProcessingStatus.FINGERPRINTED: "...",
         }

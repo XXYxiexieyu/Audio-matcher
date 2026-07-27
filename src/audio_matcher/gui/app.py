@@ -1,6 +1,6 @@
-"""Audio Matcher GUI — main application window.
+"""Audio Matcher GUI — 主程序窗口。
 
-Usage:
+用法：
     python -m audio_matcher.gui.app
 """
 
@@ -29,13 +29,13 @@ logger = logging.getLogger("audio_matcher.gui")
 
 
 class MainWindow(tb.Window):
-    """Root application window."""
+    """主程序窗口。"""
 
     def __init__(self, themename: str = "darkly") -> None:
-        super().__init__(themename=themename, title="Audio Matcher v0.0.1", size=(1100, 700))
+        super().__init__(themename=themename, title="音频匹配器 v0.0.2", size=(1100, 700))
         self.config = Config()
 
-        # Asyncio bridge.
+        # Asyncio 后台线程桥接
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._start_async_loop()
@@ -43,7 +43,7 @@ class MainWindow(tb.Window):
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ── Async bridge ─────────────────────────────────────────────────────
+    # ── 异步桥接 ─────────────────────────────────────────────────────────
 
     def _start_async_loop(self) -> None:
         self._loop = asyncio.new_event_loop()
@@ -55,14 +55,14 @@ class MainWindow(tb.Window):
         self._loop.run_forever()
 
     def _run_async(self, coro, callback=None) -> None:
-        """Schedule a coroutine on the background loop."""
+        """在后台事件循环中调度协程。"""
         async def _wrapper():
             try:
                 result = await coro
                 if callback:
                     self.after(0, callback, result)
             except Exception as exc:
-                self.after(0, lambda: self._log.log(f"Error: {exc}"))
+                self.after(0, lambda: self._log.log(f"错误：{exc}"))
 
         if self._loop:
             asyncio.run_coroutine_threadsafe(_wrapper(), self._loop)
@@ -72,10 +72,10 @@ class MainWindow(tb.Window):
             self._loop.call_soon_threadsafe(self._loop.stop)
         self.destroy()
 
-    # ── Layout ───────────────────────────────────────────────────────────
+    # ── 布局 ──────────────────────────────────────────────────────────────
 
     def _build(self) -> None:
-        # Sidebar (left).
+        # 左侧栏
         sidebar = tb.Frame(self, width=220, padding=10)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
@@ -83,15 +83,15 @@ class MainWindow(tb.Window):
         self._folder_selector = FolderSelector(sidebar, on_scan=self._on_scan)
         self._folder_selector.pack(fill="both", expand=True)
 
-        # Main content area.
+        # 主内容区
         content = tb.Frame(self, padding=5)
         content.pack(side="left", fill="both", expand=True)
 
-        # Top: track table.
+        # 上方：曲目表
         self._track_table = TrackTable(content, on_select=self._on_track_select)
         self._track_table.pack(fill="both", expand=True, pady=(0, 5))
 
-        # Bottom pane: editor + lyrics.
+        # 下方：编辑器 + 歌词
         bottom = tb.Frame(content)
         bottom.pack(fill="x", pady=(0, 5))
 
@@ -101,15 +101,15 @@ class MainWindow(tb.Window):
         self._lyrics_viewer = LyricsViewer(bottom)
         self._lyrics_viewer.pack(side="right", fill="both", expand=True, padx=(5, 0))
 
-        # Progress panel (bottom strip).
+        # 底部状态栏：进度 + 日志
         self._log = ProgressPanel(content)
         self._log.pack(fill="x")
 
-    # ── Event handlers ───────────────────────────────────────────────────
+    # ── 事件处理 ──────────────────────────────────────────────────────────
 
     def _on_scan(self, path: Path, recursive: bool, dry_run: bool) -> None:
-        self._log.set_status("Scanning...")
-        self._log.log(f"Scanning: {path}")
+        self._log.set_status("正在扫描...")
+        self._log.log(f"扫描目录：{path}")
         self._track_table.set_results([])
 
         async def _scan_pipeline():
@@ -121,8 +121,8 @@ class MainWindow(tb.Window):
             self._track_table.set_results(results)
             tagged = sum(1 for r in results if r.status == ProcessingStatus.TAGGED)
             errors = sum(1 for r in results if r.status == ProcessingStatus.ERROR)
-            self._log.set_status(f"Done: {tagged} tagged, {errors} errors")
-            self._log.log(f"Scan complete: {len(results)} files, {tagged} tagged, {errors} errors")
+            self._log.set_status(f"完成：{tagged} 首已标记，{errors} 首失败")
+            self._log.log(f"扫描完成：共 {len(results)} 个文件，{tagged} 首已标记，{errors} 首失败")
 
         self._run_async(_scan_pipeline(), _on_done)
 
@@ -138,14 +138,14 @@ class MainWindow(tb.Window):
         try:
             tagger.write(result.audio_file, result.match, result.lyrics)
             result.status = ProcessingStatus.TAGGED
-            self._log.log(f"Tags written: {result.audio_file.path.name}")
-            self._log.set_status(f"Tagged: {result.audio_file.path.name}")
+            self._log.log(f"标签已写入：{result.audio_file.path.name}")
+            self._log.set_status(f"已标记：{result.audio_file.path.name}")
         except Exception as exc:
-            self._log.log(f"Error writing tags: {exc}")
+            self._log.log(f"写入标签失败：{exc}")
 
 
 def main() -> None:
-    """Launch the GUI."""
+    """启动 GUI。"""
     app = MainWindow()
     app.mainloop()
 

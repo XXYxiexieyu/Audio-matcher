@@ -1,4 +1,4 @@
-"""Tag editor widget — manual editing of matched metadata."""
+"""标签编辑器控件 — 手动编辑识别到的元数据。"""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from audio_matcher.core.models import TrackResult
 
 
 class TagEditor(ttk.Frame):
-    """Editable form for track metadata (TITLE, ARTIST, ALBUM, YEAR, TRACK, LYRICS)."""
+    """元数据编辑表单（标题、艺人、专辑、年份、轨号、歌词）。"""
 
     FIELDS = [
-        ("title", "Title"),
-        ("artist", "Artist"),
-        ("album", "Album"),
-        ("year", "Year"),
-        ("track_number", "Track #"),
+        ("title", "标题"),
+        ("artist", "艺人"),
+        ("album", "专辑"),
+        ("year", "年份"),
+        ("track_number", "轨号"),
     ]
 
     def __init__(self, parent, *, on_write: callable = None, **kwargs) -> None:
@@ -28,13 +28,13 @@ class TagEditor(ttk.Frame):
         self._build()
 
     def _build(self) -> None:
-        # Header.
-        header = ttk.Label(self, text="Tag Editor", font=("", 11, "bold"))
+        # 标题
+        header = ttk.Label(self, text="标签编辑器", font=("", 11, "bold"))
         header.grid(row=0, column=0, columnspan=2, sticky="w", pady=(5, 10))
 
-        # Editable fields.
+        # 可编辑字段
         for i, (key, label) in enumerate(self.FIELDS):
-            ttk.Label(self, text=f"{label}:").grid(
+            ttk.Label(self, text=f"{label}：").grid(
                 row=i + 1, column=0, sticky="e", padx=(5, 5), pady=2,
             )
             var = tk.StringVar()
@@ -42,8 +42,8 @@ class TagEditor(ttk.Frame):
             entry.grid(row=i + 1, column=1, sticky="ew", padx=(0, 10), pady=2)
             self._entries[key] = var
 
-        # Lyrics.
-        ttk.Label(self, text="Lyrics:").grid(
+        # 歌词
+        ttk.Label(self, text="歌词：").grid(
             row=len(self.FIELDS) + 1, column=0, sticky="ne", padx=(5, 5), pady=(10, 2),
         )
         self._lyrics_text = tk.Text(self, width=35, height=8, wrap="word")
@@ -51,17 +51,17 @@ class TagEditor(ttk.Frame):
             row=len(self.FIELDS) + 1, column=1, sticky="ew", padx=(0, 10), pady=(10, 2),
         )
 
-        # Buttons.
+        # 按钮
         btn_frame = ttk.Frame(self)
         btn_frame.grid(row=len(self.FIELDS) + 2, column=0, columnspan=2, pady=10)
 
-        ttk.Button(btn_frame, text="Write Tags", command=self._on_write_clicked).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="Revert", command=self._revert).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="写入标签", command=self._on_write_clicked).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="还原", command=self._revert).pack(side="left", padx=5)
 
         self.grid_columnconfigure(1, weight=1)
 
     def load(self, result: TrackResult) -> None:
-        """Populate the editor with a TrackResult."""
+        """用 TrackResult 填充编辑器。"""
         self._current_result = result
         if result.match:
             self._entries["title"].set(result.match.title or "")

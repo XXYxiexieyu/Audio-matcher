@@ -1,4 +1,4 @@
-"""Progress panel widget — progress bar + log output."""
+"""进度面板控件 — 进度条 + 日志输出。"""
 
 from __future__ import annotations
 
@@ -7,23 +7,23 @@ from tkinter import ttk
 
 
 class ProgressPanel(ttk.Frame):
-    """Bottom panel with progress bar and scrollable log."""
+    """底部面板：进度条 + 可滚动日志。"""
 
     def __init__(self, parent, **kwargs) -> None:
         super().__init__(parent, **kwargs)
         self._build()
 
     def _build(self) -> None:
-        # Progress bar.
+        # 进度条
         self._progress = ttk.Progressbar(self, mode="determinate")
         self._progress.pack(fill="x", padx=5, pady=(5, 0))
 
-        # Status label.
-        self._status_var = tk.StringVar(value="Ready")
+        # 状态标签
+        self._status_var = tk.StringVar(value="就绪")
         status_label = ttk.Label(self, textvariable=self._status_var, anchor="w")
         status_label.pack(fill="x", padx=5)
 
-        # Log output.
+        # 日志输出
         self._log = tk.Text(self, wrap="word", height=6, state="disabled")
         self._log.pack(fill="both", expand=True, padx=5, pady=5)
 

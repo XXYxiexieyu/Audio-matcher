@@ -79,25 +79,44 @@ class Recognizer:
         album = ""
         year = None
 
+        # Try sections → metadata (standard Shazam response format).
         sections = track.get("sections", [])
         for section in sections:
             if section.get("type") == "SONG":
-                metadata_items = section.get("metadata", [])
-                # Shazam metadata comes in pairs: {"title": "X"}, {"text": "Y"}
+                # Support both "metadata" and "metapages" keys.
+                items = section.get("metadata") or section.get("metapages", [])
+                if not items:
+                    continue
+                # Shazam metadata: [{"title": "Label"}, {"text": "Value"}, ...]
                 i = 0
-                while i + 1 < len(metadata_items):
-                    title_item = metadata_items[i]
-                    text_item = metadata_items[i + 1]
-                    if "title" in title_item and "text" in text_item:
-                        label = title_item.get("title", "")
-                        value = text_item.get("text", "")
-                        if label == "Album":
-                            album = value
-                        elif label in ("Released", "Year"):
-                            try:
-                                year = int(value)
-                            except (ValueError, TypeError):
-                                pass
+                while i + 1 < len(items):
+                    a = items[i]
+                    b = items[i + 1]
+                    if isinstance(a, dict) and isinstance(b, dict):
+                        key = a.get("title", "")
+                        val = b.get("text", "")
+                    elif isinstance(a, dict) and "text" in a:
+                        # Alternate format: {"title": "Album", "text": "Name"}
+                        key = a.get("title", "")
+                        val = a.get("text", "")
+                        i += 1  # single-item, not pair
+                        if key == "Album":
+                            album = val
+                        elif key in ("Released", "Year"):
+                            try: year = int(val)
+                            except (ValueError, TypeError): pass
+                        continue
+                    else:
+                        i += 1
+                        continue
+
+                    if key == "Album":
+                        album = val
+                    elif key in ("Released", "Year"):
+                        try:
+                            year = int(val)
+                        except (ValueError, TypeError):
+                            pass
                     i += 2
 
         # Confidence heuristic: if we got title + artist, it's decent.

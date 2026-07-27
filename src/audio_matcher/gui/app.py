@@ -107,28 +107,46 @@ class MainWindow(tb.Window):
 
     # ── 事件处理 ──────────────────────────────────────────────────────────
 
-    def _on_scan(self, path: Path, recursive: bool, dry_run: bool) -> None:
-        self._log.set_status("正在扫描...")
+    def _on_scan(self, path: Path, recursive: bool, dry_run: bool, rename_files: bool = True) -> None:
+        self._log.set_status("正在扫描文件...")
+        self._log.set_progress(0, 1)
         self._log.log(f"扫描目录：{path}")
         self._track_table.set_results([])
+
+        # Progress callback — runs on background thread, schedules UI update.
+        def _on_progress(current: int, total: int, filename: str) -> None:
+            self.after(0, lambda: self._log.set_progress(current, total))
+            self.after(0, lambda: self._log.set_status(f"处理中 ({current}/{total}): {filename}"))
 
         async def _scan_pipeline():
             from audio_matcher.core.pipeline import Pipeline
             pipeline = Pipeline(self.config)
-            return await pipeline.run(path, dry_run=dry_run)
+            return await pipeline.run(
+                path,
+                dry_run=dry_run,
+                rename_files=rename_files,
+                progress_callback=_on_progress,
+            )
 
         def _on_done(results):
             self._track_table.set_results(results)
             tagged = sum(1 for r in results if r.status == ProcessingStatus.TAGGED)
+            lyrics_found = sum(1 for r in results if r.lyrics and r.lyrics.lines)
             errors = sum(1 for r in results if r.status == ProcessingStatus.ERROR)
-            self._log.set_status(f"完成：{tagged} 首已标记，{errors} 首失败")
-            self._log.log(f"扫描完成：共 {len(results)} 个文件，{tagged} 首已标记，{errors} 首失败")
+            self._log.set_status(f"完成：{tagged} 首已标记，{lyrics_found} 首有歌词，{errors} 失败")
+            self._log.set_progress(len(results), len(results))
+            self._log.log(
+                f"扫描完成：共 {len(results)} 个文件，"
+                f"{tagged} 首已标记，{lyrics_found} 首有歌词，{errors} 首失败"
+            )
+            # Refresh table to show updated filenames.
+            self._track_table.set_results(results)
 
         self._run_async(_scan_pipeline(), _on_done)
 
     def _on_track_select(self, result: TrackResult) -> None:
         self._tag_editor.load(result)
-        if result.lyrics:
+        if result.lyrics and result.lyrics.lines:
             self._lyrics_viewer.set_lyrics(result.lyrics.raw_lrc)
         else:
             self._lyrics_viewer.clear()

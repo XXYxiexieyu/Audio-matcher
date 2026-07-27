@@ -41,16 +41,36 @@ class FolderSelector(ttk.Frame):
         # 分隔线
         ttk.Separator(self, orient="horizontal").pack(fill="x", pady=10)
 
-        # 选项
+        # 选项 — 使用 tk.Checkbutton 以显示清晰 √
+        opt_frame = ttk.Frame(self)
+        opt_frame.pack(fill="x", padx=5)
+
         self._recursive_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            self, text="递归子目录", variable=self._recursive_var,
-        ).pack(anchor="w", padx=10)
+        tk.Checkbutton(
+            opt_frame, text="递归子目录",
+            variable=self._recursive_var,
+            selectcolor=self._get_bg(),
+            activebackground=self._get_bg(),
+            highlightthickness=0,
+        ).pack(anchor="w")
+
+        self._rename_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            opt_frame, text="重命名为 艺人 - 歌名",
+            variable=self._rename_var,
+            selectcolor=self._get_bg(),
+            activebackground=self._get_bg(),
+            highlightthickness=0,
+        ).pack(anchor="w", pady=(2, 0))
 
         self._dry_run_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            self, text="仅预览（不写入）", variable=self._dry_run_var,
-        ).pack(anchor="w", padx=10)
+        tk.Checkbutton(
+            opt_frame, text="仅预览（不写入）",
+            variable=self._dry_run_var,
+            selectcolor=self._get_bg(),
+            activebackground=self._get_bg(),
+            highlightthickness=0,
+        ).pack(anchor="w", pady=(2, 0))
 
     def _on_browse(self) -> None:
         path_str = filedialog.askdirectory(title="选择音乐目录")
@@ -65,7 +85,18 @@ class FolderSelector(ttk.Frame):
                 self._selected_path,
                 recursive=self._recursive_var.get(),
                 dry_run=self._dry_run_var.get(),
+                rename_files=self._rename_var.get(),
             )
+
+    @staticmethod
+    def _get_bg() -> str:
+        """Try to get the current theme's background color."""
+        try:
+            import ttkbootstrap as tb
+            style = tb.Style()
+            return style.colors.bg
+        except Exception:
+            return "#2b3e50"  # darkly theme default
 
     @property
     def selected_path(self) -> Path | None:

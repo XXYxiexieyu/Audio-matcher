@@ -207,7 +207,7 @@ class Pipeline:
         if not match.artist or not match.title:
             return None
 
-        raw = f"{match.artist} - {match.title}"
+        raw = f"{match.title} - {match.artist}"
         safe = _sanitise_filename(raw)
         suffix = file.path.suffix
         new_path = file.path.parent / f"{safe}{suffix}"

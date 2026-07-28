@@ -16,6 +16,15 @@ from audio_matcher.core.models import (
 
 logger = logging.getLogger("audio_matcher.lyrics")
 
+# Common browser-emulation headers for APIs that check User-Agent / Referer.
+_API_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+}
+
 
 class LyricsFetcher:
     """Fetch synced LRC lyrics from online sources.
@@ -56,6 +65,10 @@ class LyricsFetcher:
                 if result is not None and result.lines:
                     if self.cache is not None:
                         self.cache.set(match.artist, match.title, result)
+                    logger.info(
+                        "Lyrics from %s: %s - %s (%d lines)",
+                        provider, match.artist, match.title, len(result.lines),
+                    )
                     return result
             except Exception as exc:
                 logger.debug("Lyrics provider %s failed: %s", provider, exc)
@@ -72,17 +85,19 @@ class LyricsFetcher:
         https://lrclib.net/api/search
         """
         import aiohttp
-        params = {
+
+        # Search without album — including it makes matching too strict
+        # (e.g. Shazam album ≠ LRCLIB album name → 0 results).
+        params: dict[str, str] = {
             "track_name": match.title,
             "artist_name": match.artist,
         }
-        if match.album:
-            params["album_name"] = match.album
 
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 "https://lrclib.net/api/search",
                 params=params,
+                headers=_API_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 if resp.status != 200:
@@ -91,9 +106,10 @@ class LyricsFetcher:
                 data = await resp.json()
 
         if not isinstance(data, list) or len(data) == 0:
+            logger.debug("LRCLIB: no results for %s - %s", match.artist, match.title)
             return None
 
-        # Pick the first result with synced lyrics.
+        # Prefer the first result with synced lyrics.
         for entry in data:
             synced = entry.get("syncedLyrics")
             if synced:
@@ -103,6 +119,18 @@ class LyricsFetcher:
                     raw_lrc=synced,
                 )
 
+        # Fallback: use plain (unsynced) lyrics when available.
+        for entry in data:
+            plain = entry.get("plainLyrics")
+            if plain:
+                logger.debug("LRCLIB: using plain lyrics (no synced available)")
+                return SyncedLyrics(
+                    lines=self._parse_plain(plain),
+                    source=LyricsSource.LRCLIB,
+                    raw_lrc=self._plain_to_lrc(plain),
+                )
+
+        logger.debug("LRCLIB: results exist but no lyrics text in any entry")
         return None
 
     # ── NetEase ──────────────────────────────────────────────────────────
@@ -111,24 +139,24 @@ class LyricsFetcher:
         """Fetch from NetEase Cloud Music (unofficial API)."""
         try:
             import aiohttp
+
             # Search for the song.
             search_url = "https://music.163.com/api/search/get"
             params = {"s": f"{match.title} {match.artist}", "type": 1, "limit": 5}
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://music.163.com/",
-            }
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    search_url, params=params, headers=headers,
+                    search_url,
+                    params=params,
+                    headers={**_API_HEADERS, "Referer": "https://music.163.com/"},
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     if resp.status != 200:
                         return None
-                    search_data = await resp.json()
+                    search_data = await resp.json(content_type=None)
 
             songs = search_data.get("result", {}).get("songs", [])
             if not songs:
+                logger.debug("NetEase: no search results")
                 return None
 
             song_id = songs[0]["id"]
@@ -138,16 +166,19 @@ class LyricsFetcher:
             params = {"id": song_id, "lv": 1, "kv": 1, "tv": -1}
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    lyric_url, params=params, headers=headers,
+                    lyric_url,
+                    params=params,
+                    headers={**_API_HEADERS, "Referer": "https://music.163.com/"},
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     if resp.status != 200:
                         return None
-                    lyric_data = await resp.json()
+                    lyric_data = await resp.json(content_type=None)
 
             lrc_obj = lyric_data.get("lrc", {})
             raw_lrc = lrc_obj.get("lyric", "")
             if not raw_lrc:
+                logger.debug("NetEase: no lyric text in response")
                 return None
 
             return SyncedLyrics(
@@ -164,6 +195,7 @@ class LyricsFetcher:
         """Fetch from QQ Music (unofficial API)."""
         try:
             import aiohttp
+
             search_url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp"
             params = {
                 "w": f"{match.title} {match.artist}",
@@ -171,21 +203,21 @@ class LyricsFetcher:
                 "n": 5,
                 "t": 0,
             }
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://y.qq.com/",
-            }
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    search_url, params=params, headers=headers,
+                    search_url,
+                    params=params,
+                    headers={**_API_HEADERS, "Referer": "https://y.qq.com/"},
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     if resp.status != 200:
                         return None
-                    search_data = await resp.json()
+                    # QQ Music search returns application/x-javascript content-type.
+                    search_data = await resp.json(content_type=None)
 
             songs = search_data.get("data", {}).get("song", {}).get("list", [])
             if not songs:
+                logger.debug("QQ Music: no search results")
                 return None
 
             song_mid = songs[0]["songmid"]
@@ -200,15 +232,19 @@ class LyricsFetcher:
             }
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    lyric_url, params=params, headers=headers,
+                    lyric_url,
+                    params=params,
+                    headers={**_API_HEADERS, "Referer": "https://y.qq.com/"},
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     if resp.status != 200:
                         return None
-                    lyric_data = await resp.json()
+                    # QQ Music lyrics returns text/html content-type.
+                    lyric_data = await resp.json(content_type=None)
 
             raw_lrc = lyric_data.get("lyric", "")
             if not raw_lrc:
+                logger.debug("QQ Music: no lyric text in response")
                 return None
 
             return SyncedLyrics(
@@ -226,8 +262,10 @@ class LyricsFetcher:
         """Parse LRC formatted text into a list of LyricLine objects.
 
         Handles [mm:ss.xx] and [mm:ss] formats.
+        Lines without a timestamp tag are silently skipped.
         """
         import re
+
         lines: list[LyricLine] = []
         pattern = re.compile(r"\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]")
         for line in raw.splitlines():
@@ -249,3 +287,27 @@ class LyricsFetcher:
                 text = pattern.sub("", line).strip()
                 lines.append(LyricLine(timestamp_ms=timestamp_ms, text=text))
         return lines
+
+    @staticmethod
+    def _parse_plain(raw: str) -> list[LyricLine]:
+        """Parse plain (unsynced) lyrics into untimed LyricLine objects."""
+        lines: list[LyricLine] = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if line:
+                lines.append(LyricLine(timestamp_ms=0, text=line))
+        return lines
+
+    @staticmethod
+    def _plain_to_lrc(plain: str) -> str:
+        """Convert plain text lyrics into unsynced LRC format.
+
+        Each line is prefixed with [00:00.00] so it remains valid LRC
+        that can be embedded and displayed by most players.
+        """
+        result: list[str] = []
+        for line in plain.splitlines():
+            line = line.strip()
+            if line:
+                result.append(f"[00:00.00]{line}")
+        return "\n".join(result)

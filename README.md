@@ -1,4 +1,4 @@
-# Audio Matcher v0.0.3
+# Audio Matcher v0.0.4
 
 Batch audio file identification, metadata tagging, and synced lyrics (LRC) downloader.
 
@@ -56,6 +56,29 @@ python -m audio_matcher.gui.app
 | AAC    | .aac      | ID3v2    | USLT       |
 | OGG    | .ogg      | Vorbis   | LYRICS     |
 | AIFF   | .aiff     | ID3v2    | USLT       |
+
+## Changelog
+
+### v0.0.4 (2026-07-29)
+- **歌词注入修复**: 修复 LRCLIB 搜索因 album 参数过严导致 0 结果的问题
+- **LRCLIB 回退**: 无 syncedLyrics 时自动使用 plainLyrics（转为 unsynced LRC）
+- **NetEase API**: 添加 `Accept: application/json` header，使用 `content_type=None` 处理非标准响应
+- **QQ Music API**: 使用 `content_type=None` 处理 lyrics 接口返回的 `text/html` content-type
+- 统一 `_API_HEADERS` 常量，新增 `_parse_plain` / `_plain_to_lrc` 辅助方法
+
+### v0.0.3 (2026-07-27)
+- MP3 等 9 种格式支持
+- 歌词嵌入（ID3v2 USLT / Vorbis LYRICS）+ LRC sidecar
+- 文件重命名为「歌名 - 艺人」格式
+- GUI: Checkbutton 改为 ttkbootstrap round-toggle
+- 专辑字段解析修复（metadata/metapages 双格式）
+- 写入前清除旧标签
+
+### v0.0.2
+- GUI 全面中文化
+
+### v0.0.1
+- 全新 CLI + GUI 双模，英文界面
 
 ## License
 

@@ -9,10 +9,12 @@ from audio_matcher.core.cache import LyricsCache
 from audio_matcher.core.config import Config
 from audio_matcher.core.models import (
     LyricLine,
+    LyricsLanguage,
     LyricsSource,
     SyncedLyrics,
     TrackMatch,
 )
+from audio_matcher.core.romaji import lrc_to_romaji
 
 logger = logging.getLogger("audio_matcher.lyrics")
 
@@ -63,11 +65,18 @@ class LyricsFetcher:
             try:
                 result = await fetcher(match)
                 if result is not None and result.lines:
+                    # Romaji post-processing (computed fresh, not cached).
+                    language = LyricsLanguage(self.config.lyrics_language)
+                    if language in (LyricsLanguage.JAPANESE_ROMAJI, LyricsLanguage.BILINGUAL_ROMAJI):
+                        result.romanized_lrc = lrc_to_romaji(result.raw_lrc)
+                        if result.romanized_lrc:
+                            result.romanized_lines = self._parse_lrc(result.romanized_lrc)
                     if self.cache is not None:
                         self.cache.set(match.artist, match.title, result)
                     logger.info(
-                        "Lyrics from %s: %s - %s (%d lines)",
+                        "Lyrics from %s: %s - %s (%d lines, tl=%s, rom=%s)",
                         provider, match.artist, match.title, len(result.lines),
+                        result.has_translation, result.has_romanized,
                     )
                     return result
             except Exception as exc:
@@ -181,10 +190,16 @@ class LyricsFetcher:
                 logger.debug("NetEase: no lyric text in response")
                 return None
 
+            # Also capture translated lyrics (tlyric) when available.
+            tlyric_obj = lyric_data.get("tlyric", {})
+            raw_tlyric = tlyric_obj.get("lyric", "")
+
             return SyncedLyrics(
                 lines=self._parse_lrc(raw_lrc),
                 source=LyricsSource.NETEASE,
                 raw_lrc=raw_lrc,
+                translated_lrc=raw_tlyric,
+                translated_lines=self._parse_lrc(raw_tlyric) if raw_tlyric else [],
             )
         except Exception:
             return None

@@ -144,6 +144,8 @@ def _serialise_result(tr: TrackResult) -> dict:
         } if tr.match else None,
         "lyrics_source": tr.lyrics.source.value if tr.lyrics else None,
         "lyrics_raw": tr.lyrics.raw_lrc if tr.lyrics else None,
+        "lyrics_translated": tr.lyrics.translated_lrc if tr.lyrics else None,
+        "lyrics_romanized": tr.lyrics.romanized_lrc if tr.lyrics else None,
     }
 
 
@@ -181,6 +183,8 @@ def _deserialise_result(data: dict) -> TrackResult:
             lines=[],  # Lines not serialised individually in v0.0.1
             source=LyricsSource(data.get("lyrics_source", "lrclib")),
             raw_lrc=data.get("lyrics_raw", ""),
+            translated_lrc=data.get("lyrics_translated", ""),
+            romanized_lrc=data.get("lyrics_romanized", ""),
         )
     return TrackResult(
         audio_file=af,

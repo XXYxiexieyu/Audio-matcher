@@ -63,6 +63,14 @@ class ProcessingStatus(StrEnum):
     SKIPPED = "skipped"
 
 
+class LyricsLanguage(StrEnum):
+    """Controls which lyrics variants to embed in the output file."""
+    ORIGINAL_ONLY = "original_only"          # 仅外语
+    BILINGUAL = "bilingual"                  # 双语（原文+翻译）
+    JAPANESE_ROMAJI = "japanese_romaji"      # 日语+罗马音
+    BILINGUAL_ROMAJI = "bilingual_romaji"    # 双语+罗马音
+
+
 # ── Data Models ──────────────────────────────────────────────────────────
 
 
@@ -100,10 +108,27 @@ class LyricLine:
 
 @dataclass
 class SyncedLyrics:
-    """Synced LRC lyrics from an online source."""
+    """Synced LRC lyrics from an online source.
+
+    Carries original, translated, and romanised variants so the
+    language-mode decision can be deferred to the pipeline / tagger.
+    """
     lines: list[LyricLine] = field(default_factory=list)
     source: LyricsSource = LyricsSource.LRCLIB
     raw_lrc: str = ""
+    # v0.0.5: multi-language support.
+    translated_lrc: str = ""
+    translated_lines: list[LyricLine] = field(default_factory=list)
+    romanized_lrc: str = ""
+    romanized_lines: list[LyricLine] = field(default_factory=list)
+
+    @property
+    def has_translation(self) -> bool:
+        return bool(self.translated_lrc)
+
+    @property
+    def has_romanized(self) -> bool:
+        return bool(self.romanized_lrc)
 
 
 @dataclass

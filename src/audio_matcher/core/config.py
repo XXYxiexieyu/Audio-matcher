@@ -30,7 +30,7 @@ class Config:
     # ── MusicBrainz client identity ──────────────────────────────────────
 
     musicbrainz_app_name: str = "audio_matcher"
-    musicbrainz_app_version: str = "0.0.1"
+    musicbrainz_app_version: str = "0.0.5"
 
     # ── Recognition ──────────────────────────────────────────────────────
 
@@ -52,6 +52,7 @@ class Config:
     lyrics_providers: list[str] = field(default_factory=lambda: [
         "lrclib", "netease", "qqmusic",
     ])
+    lyrics_language: str = "original_only"
     write_lrc_sidecar: bool = True
 
     # ── Tagging ──────────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ class Config:
             "min_duration_sec": self.min_duration_sec,
             "max_duration_sec": self.max_duration_sec,
             "lyrics_providers": self.lyrics_providers,
+            "lyrics_language": self.lyrics_language,
             "write_lrc_sidecar": self.write_lrc_sidecar,
             "overwrite_tags": self.overwrite_tags,
             "backup_original": self.backup_original,

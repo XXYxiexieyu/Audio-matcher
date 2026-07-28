@@ -32,7 +32,7 @@ class MainWindow(tb.Window):
     """主程序窗口。"""
 
     def __init__(self, themename: str = "darkly") -> None:
-        super().__init__(themename=themename, title="音频匹配器 v0.0.4", size=(1200, 850))
+        super().__init__(themename=themename, title="音频匹配器 v0.0.5", size=(1200, 850))
         self.config = Config()
 
         # Asyncio 后台线程桥接
@@ -107,10 +107,10 @@ class MainWindow(tb.Window):
 
     # ── 事件处理 ──────────────────────────────────────────────────────────
 
-    def _on_scan(self, path: Path, recursive: bool, dry_run: bool, rename_files: bool = True) -> None:
+    def _on_scan(self, path: Path, files: list, language: str, dry_run: bool, rename_files: bool = True) -> None:
         self._log.set_status("正在扫描文件...")
-        self._log.set_progress(0, 1)
-        self._log.log(f"扫描目录：{path}")
+        self._log.set_progress(0, 1 if not files else len(files))
+        self._log.log(f"扫描目录：{path}（{len(files)} 个文件，语言：{language}）")
         self._track_table.set_results([])
 
         # Progress callback — runs on background thread, schedules UI update.
@@ -125,6 +125,8 @@ class MainWindow(tb.Window):
                 path,
                 dry_run=dry_run,
                 rename_files=rename_files,
+                files=files,
+                lyrics_language=language,
                 progress_callback=_on_progress,
             )
 
@@ -146,8 +148,8 @@ class MainWindow(tb.Window):
 
     def _on_track_select(self, result: TrackResult) -> None:
         self._tag_editor.load(result)
-        if result.lyrics and result.lyrics.lines:
-            self._lyrics_viewer.set_lyrics(result.lyrics.raw_lrc)
+        if result.lyrics:
+            self._lyrics_viewer.set_lyrics(result.lyrics)
         else:
             self._lyrics_viewer.clear()
 

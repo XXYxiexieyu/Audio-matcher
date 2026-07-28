@@ -73,14 +73,30 @@ class Pipeline:
         dry_run: bool = False,
         no_lyrics: bool = False,
         rename_files: bool = False,
+        files: Optional[list] = None,
+        lyrics_language: str = "original_only",
         progress_callback: Optional[ProgressCallback] = None,
     ) -> list[TrackResult]:
-        """Run the full pipeline on all audio files under *root*."""
+        """Run the full pipeline on all audio files under *root*.
+
+        Args:
+            files: Pre-filtered file list (GUI).  When provided the
+                   internal scanner is skipped — only these files are
+                   processed.
+            lyrics_language: One of ``LyricsLanguage`` values; controls
+                   which lyrics variants are embedded.
+        """
         root = Path(root).resolve()
+        self.config.lyrics_language = lyrics_language
         self._progress_cb = progress_callback
         completed_count = 0
 
-        if resume_path and Path(resume_path).exists():
+        if files is not None:
+            # Use pre-filtered file list from GUI / caller.
+            if not files:
+                logger.warning("No files selected for processing")
+                return []
+        elif resume_path and Path(resume_path).exists():
             state = self.state_mgr.load(resume_path)
             files = self.state_mgr.pending_files(state)
         else:

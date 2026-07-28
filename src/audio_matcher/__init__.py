@@ -1,3 +1,3 @@
 """Audio Matcher — Audio identification, metadata tagging, and synced lyrics downloader."""
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"

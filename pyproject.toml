@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audio-matcher"
-version = "0.0.4"
+version = "0.0.5"
 description = "Audio identification, metadata tagging, and synced lyrics downloader"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -41,6 +41,9 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
     "ruff>=0.5",
+]
+romaji = [
+    "pykakasi>=2.0",
 ]
 
 [project.scripts]

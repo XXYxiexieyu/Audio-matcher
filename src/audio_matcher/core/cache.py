@@ -87,10 +87,15 @@ class LyricsCache(_JSONCache):
             return None
         logger.debug("Lyrics cache hit: %s - %s", artist, title)
         from audio_matcher.core.models import LyricLine, LyricsSource
+        translated_lines_data = entry.get("translated_lines", [])
         return SyncedLyrics(
             lines=[LyricLine(timestamp_ms=l["ts"], text=l["text"]) for l in entry.get("lines", [])],
             source=LyricsSource(entry.get("source", "lrclib")),
             raw_lrc=entry.get("raw_lrc", ""),
+            translated_lrc=entry.get("translated_lrc", ""),
+            translated_lines=[
+                LyricLine(timestamp_ms=l["ts"], text=l["text"]) for l in translated_lines_data
+            ],
         )
 
     def set(self, artist: str, title: str, lyrics: SyncedLyrics) -> None:
@@ -101,6 +106,10 @@ class LyricsCache(_JSONCache):
             "lines": [{"ts": l.timestamp_ms, "text": l.text} for l in lyrics.lines],
             "source": lyrics.source.value,
             "raw_lrc": lyrics.raw_lrc,
+            "translated_lrc": lyrics.translated_lrc,
+            "translated_lines": [
+                {"ts": l.timestamp_ms, "text": l.text} for l in lyrics.translated_lines
+            ],
         }
         self._persist()
 

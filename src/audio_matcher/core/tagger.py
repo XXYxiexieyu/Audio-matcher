@@ -15,6 +15,7 @@ from audio_matcher.core.config import Config
 from audio_matcher.core.models import (
     AudioFile,
     AudioFormat,
+    LyricsLanguage,
     SyncedLyrics,
     TrackMatch,
 )
@@ -61,11 +62,15 @@ class AudioTagger:
 
             self._write_tags(mf, file.format, match)
             if lyrics and lyrics.raw_lrc:
-                self._write_lyrics(mf, file.format, lyrics.raw_lrc)
+                self._write_lyrics(mf, file.format, lyrics, self.config.lyrics_language)
             mf.save()
 
             if self.config.write_lrc_sidecar and lyrics and lyrics.raw_lrc:
-                self._write_lrc_sidecar(file.path, lyrics.raw_lrc)
+                self._write_lrc_sidecar(file.path, lyrics.raw_lrc, suffix=".lrc")
+                if lyrics.has_translation:
+                    self._write_lrc_sidecar(file.path, lyrics.translated_lrc, suffix=".translation.lrc")
+                if lyrics.has_romanized:
+                    self._write_lrc_sidecar(file.path, lyrics.romanized_lrc, suffix=".romaji.lrc")
 
             logger.info("Tagged: %s → %s - %s", file.path.name, match.artist, match.title)
             return True
@@ -111,45 +116,94 @@ class AudioTagger:
             mf["tracknumber"] = str(match.track_number)
 
     @classmethod
-    def _write_lyrics(cls, mf, fmt: AudioFormat, raw_lrc: str) -> None:
-        """Embed lyrics text, using format-appropriate frames."""
+    def _write_lyrics(cls, mf, fmt: AudioFormat, lyrics: SyncedLyrics, language_mode: str) -> None:
+        """Embed lyrics text(s), using format-appropriate frames.
+
+        The number and type of lyrics fields written depends on
+        *language_mode*.  For ID3 formats multiple USLT frames are
+        distinguished by their ``desc`` field; for Vorbis formats
+        custom tag keys are used.
+        """
+        language = LyricsLanguage(language_mode)
+        entries: list[tuple[str, str, str]] = []  # (desc, lang_code, text)
+
+        # Always write original.
+        if lyrics.raw_lrc:
+            entries.append(("", "eng", lyrics.raw_lrc))
+
+        # Translation — for bilingual modes only.
+        if language in (LyricsLanguage.BILINGUAL, LyricsLanguage.BILINGUAL_ROMAJI):
+            if lyrics.translated_lrc:
+                entries.append(("Translation", "chi", lyrics.translated_lrc))
+
+        # Romaji — for romaji modes only.
+        if language in (LyricsLanguage.JAPANESE_ROMAJI, LyricsLanguage.BILINGUAL_ROMAJI):
+            if lyrics.romanized_lrc:
+                entries.append(("Romanized", "eng", lyrics.romanized_lrc))
+
+        # Route to format-specific writer.
+        _ID3_FORMATS = (
+            AudioFormat.MP3, AudioFormat.WAV, AudioFormat.DSF,
+            AudioFormat.DFF, AudioFormat.AIFF,
+        )
+        _VORBIS_FORMATS = (AudioFormat.FLAC, AudioFormat.OGG)
+
+        if fmt in _ID3_FORMATS:
+            cls._write_lyrics_id3(mf, entries)
+        elif fmt in _VORBIS_FORMATS:
+            cls._write_lyrics_vorbis(mf, entries)
+        else:
+            # Fallback: write only original as plain key.
+            if lyrics.raw_lrc:
+                try:
+                    mf["lyrics"] = lyrics.raw_lrc
+                except Exception:
+                    logger.debug("Could not embed lyrics for format %s", fmt.value)
+
+    @classmethod
+    def _write_lyrics_id3(cls, mf, entries: list[tuple[str, str, str]]) -> None:
+        """Write multiple USLT frames to an ID3 tag object."""
         import mutagen.id3
 
-        # For ID3-based formats (MP3, WAV, DSF, DFF, AIFF), use USLT frame.
-        if fmt in (AudioFormat.MP3, AudioFormat.WAV, AudioFormat.DSF, AudioFormat.DFF, AudioFormat.AIFF):
-            try:
-                if hasattr(mf, "tags") and mf.tags is not None:
-                    # Remove existing USLT frames.
-                    for key in list(mf.tags.keys()):
-                        if key.startswith("USLT"):
-                            del mf.tags[key]
-                    mf.tags.add(
-                        mutagen.id3.USLT(
-                            encoding=3,
-                            lang="eng",
-                            desc="",
-                            text=raw_lrc,
-                        )
-                    )
-                    return
-            except Exception:
-                pass
-
-        # For Vorbis-based formats (FLAC, OGG), use LYRICS tag.
-        if fmt in (AudioFormat.FLAC, AudioFormat.OGG):
-            mf["lyrics"] = raw_lrc
+        if not hasattr(mf, "tags") or mf.tags is None:
             return
 
-        # Fallback: generic assignment.
-        try:
-            mf["lyrics"] = raw_lrc
-        except Exception:
-            logger.debug("Could not embed lyrics for format %s", fmt.value)
+        # Remove all existing USLT frames first.
+        for key in list(mf.tags.keys()):
+            if key.startswith("USLT"):
+                del mf.tags[key]
+
+        for desc, lang, text in entries:
+            mf.tags.add(
+                mutagen.id3.USLT(
+                    encoding=3,  # UTF-8
+                    lang=lang[:3],
+                    desc=desc,
+                    text=text,
+                )
+            )
+
+    @classmethod
+    def _write_lyrics_vorbis(cls, mf, entries: list[tuple[str, str, str]]) -> None:
+        """Write Vorbis comment tags for lyrics.
+
+        Original → LYRICS (standard key).
+        Translation → LYRICS_TRANSLATION.
+        Romanized → LYRICS_ROMANIZED.
+        """
+        _TAG_KEY = {
+            "": "LYRICS",
+            "Translation": "LYRICS_TRANSLATION",
+            "Romanized": "LYRICS_ROMANIZED",
+        }
+        for desc, _lang, text in entries:
+            key = _TAG_KEY.get(desc, f"LYRICS_{desc.upper()}")
+            mf[key] = text
 
     @staticmethod
-    def _write_lrc_sidecar(audio_path: Path, raw_lrc: str) -> None:
-        """Write a .lrc sidecar file next to the audio file."""
-        lrc_path = audio_path.with_suffix(".lrc")
+    def _write_lrc_sidecar(audio_path: Path, raw_lrc: str, suffix: str = ".lrc") -> None:
+        """Write an LRC sidecar file next to the audio file."""
+        lrc_path = audio_path.with_suffix(suffix)
         lrc_path.write_text(raw_lrc, encoding="utf-8")
         logger.debug("LRC sidecar written: %s", lrc_path.name)
 

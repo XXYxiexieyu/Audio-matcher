@@ -1,4 +1,4 @@
-# Audio Matcher v0.0.4
+# Audio Matcher v0.0.5
 
 Batch audio file identification, metadata tagging, and synced lyrics (LRC) downloader.
 
@@ -58,6 +58,15 @@ python -m audio_matcher.gui.app
 | AIFF   | .aiff     | ID3v2    | USLT       |
 
 ## Changelog
+
+### v0.0.5 (2026-07-29)
+- **文件选择**: 浏览目录后显示文件列表（复选框默认全选）+ 全选/全不选按钮
+- **歌词语言选择**: 仅外语 / 双语 / 日语+罗马音 / 双语+罗马音
+- **罗马音转换**: pykakasi 日语→罗马音，保持 LRC 时间戳
+- **多歌词标签**: ID3 多 USLT 帧 / Vorbis 多标签
+- **歌词预览**: 原文/翻译/罗马音分段显示
+- 修复 GUI recursive 参数传递 bug
+- Pipeline 支持预过滤文件列表
 
 ### v0.0.4 (2026-07-29)
 - **歌词注入修复**: 修复 LRCLIB 搜索因 album 参数过严导致 0 结果的问题

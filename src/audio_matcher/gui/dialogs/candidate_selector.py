@@ -1,4 +1,4 @@
-"""候选选择对话框 — 模糊匹配时展示多个候选让用户选择。"""
+"""候选选择对话框 — 现代化的模糊匹配候选选择。"""
 
 from __future__ import annotations
 
@@ -7,24 +7,25 @@ from tkinter import ttk
 from typing import Optional
 
 import ttkbootstrap as tb
-from ttkbootstrap.constants import *
 
 from audio_matcher.core.models import MatchSource, TrackMatch
+from audio_matcher.gui.styles import Colors, Fonts, Icons, Sizes, Spacing
 
 
 class CandidateSelectorDialog(tb.Toplevel):
-    """模态对话框，显示模糊匹配候选列表供用户选择。
+    """候选选择对话框。
 
-    使用方法::
-
-        dialog = CandidateSelectorDialog(parent, candidates, filename)
-        selected = dialog.selected_match  # TrackMatch or None
+    功能：
+    - 显示候选列表（置信度条形图）
+    - 来源徽章
+    - 预览选中候选详情
+    - 确认/手动输入/跳过
     """
 
     SOURCE_LABELS = {
-        "acoustid": "AcoustID",
-        "shazam": "Shazam",
-        "musicbrainz": "MusicBrainz",
+        "acoustid": ("AcoustID", Colors.INFO),
+        "shazam": ("Shazam", Colors.PRIMARY),
+        "musicbrainz": ("MusicBrainz", Colors.SUCCESS),
     }
 
     def __init__(
@@ -37,6 +38,7 @@ class CandidateSelectorDialog(tb.Toplevel):
         self.title("选择匹配结果")
         self._result: Optional[TrackMatch] = None
         self._candidates = candidates
+        self._selected_index: Optional[int] = None
 
         self.transient(parent)
         self.grab_set()
@@ -57,98 +59,242 @@ class CandidateSelectorDialog(tb.Toplevel):
     def selected_match(self) -> Optional[TrackMatch]:
         return self._result
 
+    # ── Build ──────────────────────────────────────────────────────────
+
     def _build(self, filename: str) -> None:
-        # 标题说明
+        # 主容器
+        main = tb.Frame(self, padding=Spacing.LG)
+        main.pack(fill="both", expand=True)
+
+        # 标题
         header = ttk.Label(
-            self,
-            text=f"主识别失败，以下是备选匹配结果：\n{filename}",
-            font=("", 11),
-            wraplength=520,
+            main,
+            text="主识别失败，请选择正确的匹配结果",
+            font=Fonts.H2,
+            foreground=Colors.TEXT_PRIMARY,
         )
-        header.pack(pady=(15, 10), padx=20)
+        header.pack(anchor="w", pady=(0, Spacing.XS))
 
-        # Treeview
-        columns = ("confidence", "title", "artist", "album", "source")
-        self._tree = ttk.Treeview(
-            self,
-            columns=columns,
-            show="headings",
-            selectmode="browse",
-            height=min(len(self._candidates), 10),
-        )
-        self._tree.heading("confidence", text="置信度")
-        self._tree.heading("title", text="标题")
-        self._tree.heading("artist", text="艺人")
-        self._tree.heading("album", text="专辑")
-        self._tree.heading("source", text="来源")
-        self._tree.column("confidence", width=70, anchor="center")
-        self._tree.column("title", width=180)
-        self._tree.column("artist", width=130)
-        self._tree.column("album", width=130)
-        self._tree.column("source", width=90, anchor="center")
-        self._tree.pack(fill="both", expand=True, padx=20, pady=5)
+        # 文件名
+        ttk.Label(
+            main,
+            text=f"文件：{filename}",
+            font=Fonts.SMALL,
+            foreground=Colors.TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(0, Spacing.MD))
 
-        # 填充数据
-        for i, c in enumerate(self._candidates):
-            self._tree.insert(
-                "",
-                "end",
-                iid=str(i),
-                values=(
-                    f"{c.confidence:.0%}",
-                    c.title,
-                    c.artist,
-                    c.album,
-                    self.SOURCE_LABELS.get(c.source.value, c.source.value),
-                ),
-            )
+        # 候选列表
+        list_frame = ttk.Frame(main)
+        list_frame.pack(fill="both", expand=True, pady=(0, Spacing.MD))
+
+        # 创建候选卡片
+        self._candidate_frames: list[tk.Frame] = []
+        for i, candidate in enumerate(self._candidates):
+            frame = self._create_candidate_card(list_frame, candidate, i)
+            frame.pack(fill="x", pady=Spacing.XS)
+            self._candidate_frames.append(frame)
+
+        # 默认选中第一个
+        if self._candidates:
+            self._select_candidate(0)
 
         # 按钮
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(pady=(5, 15))
+        btn_frame = ttk.Frame(main)
+        btn_frame.pack(fill="x", pady=(Spacing.MD, 0))
 
-        ttk.Button(
-            btn_frame, text="确认选择",
-            command=self._on_confirm, bootstyle="success",
-        ).pack(side="left", padx=5)
+        tb.Button(
+            btn_frame,
+            text=f"{Icons.SUCCESS} 确认选择",
+            command=self._on_confirm,
+            bootstyle="success",
+            width=15,
+        ).pack(side="left", padx=(0, Spacing.SM))
 
-        ttk.Button(
-            btn_frame, text="手动输入",
-            command=self._on_manual, bootstyle="secondary",
-        ).pack(side="left", padx=5)
+        tb.Button(
+            btn_frame,
+            text=f"{Icons.EDIT} 手动输入",
+            command=self._on_manual,
+            bootstyle="secondary-outline",
+            width=15,
+        ).pack(side="left", padx=Spacing.SM)
 
-        ttk.Button(
-            btn_frame, text="跳过",
-            command=self._on_skip, bootstyle="secondary",
-        ).pack(side="left", padx=5)
+        tb.Button(
+            btn_frame,
+            text="跳过",
+            command=self._on_skip,
+            bootstyle="secondary-outline",
+            width=15,
+        ).pack(side="left", padx=Spacing.SM)
 
-        # 双击选择
-        self._tree.bind("<Double-1>", lambda e: self._on_confirm())
+        # 提示
+        ttk.Label(
+            main,
+            text="选择后将自动获取歌词并写入标签",
+            font=Fonts.SMALL,
+            foreground=Colors.TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(Spacing.MD, 0))
 
-        # 按 Enter 确认
+        # 快捷键
         self.bind("<Return>", lambda e: self._on_confirm())
         self.bind("<Escape>", lambda e: self._on_skip())
+        self.bind("<Up>", lambda e: self._navigate(-1))
+        self.bind("<Down>", lambda e: self._navigate(1))
+
+    def _create_candidate_card(
+        self, parent, candidate: TrackMatch, index: int
+    ) -> tk.Frame:
+        """创建候选卡片。"""
+        # 卡片框架
+        card = tk.Frame(
+            parent,
+            bg=Colors.BG_CARD,
+            padx=Spacing.MD,
+            pady=Spacing.SM,
+            cursor="hand2",
+        )
+
+        # 绑定点击
+        card.bind("<Button-1>", lambda e, i=index: self._select_candidate(i))
+
+        # 左侧：置信度条形图
+        conf_frame = tk.Frame(card, bg=Colors.BG_CARD, width=60)
+        conf_frame.pack(side="left", fill="y", padx=(0, Spacing.MD))
+        conf_frame.pack_propagate(False)
+
+        # 置信度百分比
+        conf_pct = candidate.confidence
+        conf_label = tk.Label(
+            conf_frame,
+            text=f"{conf_pct:.0%}",
+            font=Fonts.H3,
+            fg=Colors.PRIMARY,
+            bg=Colors.BG_CARD,
+        )
+        conf_label.pack(pady=(Spacing.SM, 0))
+
+        # 置信度条
+        conf_bar_bg = tk.Frame(conf_frame, bg=Colors.BORDER, height=4, width=50)
+        conf_bar_bg.pack(pady=Spacing.XS)
+        conf_bar_bg.pack_propagate(False)
+
+        conf_bar_fill = tk.Frame(
+            conf_bar_bg,
+            bg=Colors.PRIMARY,
+            height=4,
+            width=int(50 * conf_pct),
+        )
+        conf_bar_fill.place(x=0, y=0)
+
+        # 中间：信息
+        info_frame = tk.Frame(card, bg=Colors.BG_CARD)
+        info_frame.pack(side="left", fill="both", expand=True)
+
+        # 标题
+        title_label = tk.Label(
+            info_frame,
+            text=candidate.title or "未知标题",
+            font=Fonts.BODY_BOLD,
+            fg=Colors.TEXT_PRIMARY,
+            bg=Colors.BG_CARD,
+            anchor="w",
+        )
+        title_label.pack(fill="x")
+
+        # 艺人 + 专辑
+        artist_text = candidate.artist or "未知艺人"
+        if candidate.album:
+            artist_text += f" · {candidate.album}"
+        if candidate.year:
+            artist_text += f" ({candidate.year})"
+
+        artist_label = tk.Label(
+            info_frame,
+            text=artist_text,
+            font=Fonts.BODY,
+            fg=Colors.TEXT_SECONDARY,
+            bg=Colors.BG_CARD,
+            anchor="w",
+        )
+        artist_label.pack(fill="x")
+
+        # 右侧：来源徽章
+        source_label, source_color = self.SOURCE_LABELS.get(
+            candidate.source.value, (candidate.source.value, Colors.TEXT_SECONDARY)
+        )
+        source_badge = tk.Label(
+            card,
+            text=source_label,
+            font=Fonts.SMALL,
+            fg=source_color,
+            bg=Colors.BG_CARD,
+            padx=Spacing.SM,
+            pady=Spacing.XS,
+        )
+        source_badge.pack(side="right")
+
+        # 存储索引
+        card._candidate_index = index
+
+        return card
+
+    def _select_candidate(self, index: int) -> None:
+        """选中候选。"""
+        self._selected_index = index
+
+        # 更新所有卡片样式
+        for i, frame in enumerate(self._candidate_frames):
+            if i == index:
+                frame.configure(bg=Colors.BG_SELECTED)
+                for child in frame.winfo_children():
+                    if isinstance(child, tk.Frame):
+                        child.configure(bg=Colors.BG_SELECTED)
+                        for grandchild in child.winfo_children():
+                            if isinstance(grandchild, tk.Label):
+                                grandchild.configure(bg=Colors.BG_SELECTED)
+                    elif isinstance(child, tk.Label):
+                        child.configure(bg=Colors.BG_SELECTED)
+            else:
+                frame.configure(bg=Colors.BG_CARD)
+                for child in frame.winfo_children():
+                    if isinstance(child, tk.Frame):
+                        child.configure(bg=Colors.BG_CARD)
+                        for grandchild in child.winfo_children():
+                            if isinstance(grandchild, tk.Label):
+                                grandchild.configure(bg=Colors.BG_CARD)
+                    elif isinstance(child, tk.Label):
+                        child.configure(bg=Colors.BG_CARD)
+
+    def _navigate(self, delta: int) -> None:
+        """键盘导航。"""
+        if not self._candidates:
+            return
+        new_index = (self._selected_index or 0) + delta
+        new_index = max(0, min(new_index, len(self._candidates) - 1))
+        self._select_candidate(new_index)
+
+    # ── Actions ────────────────────────────────────────────────────────
 
     def _on_confirm(self) -> None:
-        selection = self._tree.selection()
-        if selection:
-            idx = int(selection[0])
-            self._result = self._candidates[idx]
+        """确认选择。"""
+        if self._selected_index is not None:
+            self._result = self._candidates[self._selected_index]
         self.destroy()
 
     def _on_manual(self) -> None:
-        dialog = _ManualEntryDialog(self)
+        """手动输入。"""
+        dialog = ManualEntryDialog(self)
         if dialog.result:
             self._result = dialog.result
         self.destroy()
 
     def _on_skip(self) -> None:
+        """跳过。"""
         self._result = None
         self.destroy()
 
 
-class _ManualEntryDialog(tb.Toplevel):
-    """手动输入标题/艺人的小对话框。"""
+class ManualEntryDialog(tb.Toplevel):
+    """手动输入对话框。"""
 
     def __init__(self, parent) -> None:
         super().__init__(parent)
@@ -161,31 +307,62 @@ class _ManualEntryDialog(tb.Toplevel):
         self.wait_window()
 
     def _build(self) -> None:
-        ttk.Label(self, text="标题：").grid(
-            row=0, column=0, padx=10, pady=5, sticky="e"
-        )
+        main = tb.Frame(self, padding=Spacing.LG)
+        main.pack(fill="both", expand=True)
+
+        # 标题
+        ttk.Label(
+            main,
+            text="手动输入歌曲信息",
+            font=Fonts.H3,
+            foreground=Colors.TEXT_PRIMARY,
+        ).pack(anchor="w", pady=(0, Spacing.MD))
+
+        # 标题输入
+        ttk.Label(
+            main,
+            text="标题：",
+            font=Fonts.BODY,
+            foreground=Colors.TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(Spacing.XS, 0))
+
         self._title_var = tk.StringVar()
-        ttk.Entry(self, textvariable=self._title_var, width=40).grid(
-            row=0, column=1, padx=10, pady=5
-        )
+        title_entry = ttk.Entry(main, textvariable=self._title_var, width=40)
+        title_entry.pack(fill="x", pady=(Spacing.XS, Spacing.SM))
+        title_entry.focus()
 
-        ttk.Label(self, text="艺人：").grid(
-            row=1, column=0, padx=10, pady=5, sticky="e"
-        )
+        # 艺人输入
+        ttk.Label(
+            main,
+            text="艺人：",
+            font=Fonts.BODY,
+            foreground=Colors.TEXT_SECONDARY,
+        ).pack(anchor="w", pady=(Spacing.SM, 0))
+
         self._artist_var = tk.StringVar()
-        ttk.Entry(self, textvariable=self._artist_var, width=40).grid(
-            row=1, column=1, padx=10, pady=5
+        ttk.Entry(main, textvariable=self._artist_var, width=40).pack(
+            fill="x", pady=(Spacing.XS, Spacing.MD)
         )
 
-        btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        # 按钮
+        btn_frame = ttk.Frame(main)
+        btn_frame.pack(fill="x")
 
-        ttk.Button(
-            btn_frame, text="确定", command=self._on_ok, bootstyle="success",
-        ).pack(side="left", padx=5)
-        ttk.Button(
-            btn_frame, text="取消", command=self.destroy,
-        ).pack(side="left", padx=5)
+        tb.Button(
+            btn_frame,
+            text="确定",
+            command=self._on_ok,
+            bootstyle="success",
+            width=12,
+        ).pack(side="left", padx=(0, Spacing.SM))
+
+        tb.Button(
+            btn_frame,
+            text="取消",
+            command=self.destroy,
+            bootstyle="secondary-outline",
+            width=12,
+        ).pack(side="left")
 
         self.bind("<Return>", lambda e: self._on_ok())
 

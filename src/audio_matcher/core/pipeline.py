@@ -185,10 +185,29 @@ class Pipeline:
             # 2. Recognize.
             recognizer = Recognizer(self.config)
             match = await recognizer.recognize_file(str(file.path))
-            if match:
+            # Only accept the match if it has meaningful content and meets
+            # the confidence threshold; otherwise fall through to fuzzy.
+            if (
+                match
+                and match.title
+                and match.confidence >= self.config.min_confidence
+            ):
                 result.match = match
                 result.status = ProcessingStatus.RECOGNIZED
             else:
+                if match and not match.title:
+                    logger.info(
+                        "Shazam returned empty match for %s, falling back to fuzzy...",
+                        file.path.name,
+                    )
+                elif match and match.confidence < self.config.min_confidence:
+                    logger.info(
+                        "Shazam confidence %.0f%% below threshold %.0f%% for %s, "
+                        "falling back to fuzzy...",
+                        match.confidence * 100,
+                        self.config.min_confidence * 100,
+                        file.path.name,
+                    )
                 # Fuzzy fallback: try alternative fingerprint strategies.
                 logger.info(
                     "Primary recognition failed for %s, attempting fuzzy matching...",

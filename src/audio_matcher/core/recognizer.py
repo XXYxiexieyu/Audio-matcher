@@ -87,37 +87,38 @@ class Recognizer:
                 items = section.get("metadata") or section.get("metapages", [])
                 if not items:
                     continue
-                # Shazam metadata: [{"title": "Label"}, {"text": "Value"}, ...]
+                # Shazam metadata can be in two formats:
+                #   Single-item (modern): {"title": "Album", "text": "Name"}
+                #   Paired (legacy):      {"title": "Label"}, {"text": "Value"}
                 i = 0
-                while i + 1 < len(items):
+                while i < len(items):
                     a = items[i]
-                    b = items[i + 1]
-                    if isinstance(a, dict) and isinstance(b, dict):
-                        key = a.get("title", "")
-                        val = b.get("text", "")
-                    elif isinstance(a, dict) and "text" in a:
-                        # Alternate format: {"title": "Album", "text": "Name"}
+                    # Single-item format: each dict carries both title + text.
+                    if isinstance(a, dict) and "text" in a:
                         key = a.get("title", "")
                         val = a.get("text", "")
-                        i += 1  # single-item, not pair
+                        i += 1
                         if key == "Album":
                             album = val
                         elif key in ("Released", "Year"):
                             try: year = int(val)
                             except (ValueError, TypeError): pass
                         continue
-                    else:
-                        i += 1
-                        continue
-
-                    if key == "Album":
-                        album = val
-                    elif key in ("Released", "Year"):
-                        try:
-                            year = int(val)
-                        except (ValueError, TypeError):
-                            pass
-                    i += 2
+                    # Paired format: title-only dict followed by text-only dict.
+                    if i + 1 < len(items):
+                        b = items[i + 1]
+                        if isinstance(a, dict) and isinstance(b, dict):
+                            key = a.get("title", "")
+                            val = b.get("text", "")
+                            i += 2
+                            if key == "Album":
+                                album = val
+                            elif key in ("Released", "Year"):
+                                try: year = int(val)
+                                except (ValueError, TypeError): pass
+                            continue
+                    # Unrecognised item — skip.
+                    i += 1
 
         # Confidence heuristic: if we got title + artist, it's decent.
         confidence = 0.8 if title and artist else 0.3

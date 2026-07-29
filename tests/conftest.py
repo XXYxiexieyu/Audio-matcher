@@ -83,8 +83,7 @@ def mock_shazam_response() -> dict[str, Any]:
                 {
                     "type": "SONG",
                     "metadata": [
-                        {"title": "Album"},
-                        {"text": "Mock Album"},
+                        {"title": "Album", "text": "Mock Album"},
                     ],
                 }
             ],

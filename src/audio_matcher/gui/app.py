@@ -24,6 +24,7 @@ from audio_matcher.gui.widgets.track_table import TrackTable
 from audio_matcher.gui.widgets.tag_editor import TagEditor
 from audio_matcher.gui.widgets.lyrics_viewer import LyricsViewer
 from audio_matcher.gui.widgets.progress_panel import ProgressPanel
+from audio_matcher.gui.dialogs.candidate_selector import CandidateSelectorDialog
 
 logger = logging.getLogger("audio_matcher.gui")
 
@@ -32,7 +33,7 @@ class MainWindow(tb.Window):
     """主程序窗口。"""
 
     def __init__(self, themename: str = "darkly") -> None:
-        super().__init__(themename=themename, title="音频匹配器 v0.0.5", size=(1200, 850))
+        super().__init__(themename=themename, title="音频匹配器 v0.0.6", size=(1200, 850))
         self.config = Config()
 
         # Asyncio 后台线程桥接
@@ -135,12 +136,16 @@ class MainWindow(tb.Window):
             tagged = sum(1 for r in results if r.status == ProcessingStatus.TAGGED)
             lyrics_found = sum(1 for r in results if r.lyrics and r.lyrics.lines)
             errors = sum(1 for r in results if r.status == ProcessingStatus.ERROR)
-            self._log.set_status(f"完成：{tagged} 首已标记，{lyrics_found} 首有歌词，{errors} 失败")
-            self._log.set_progress(len(results), len(results))
-            self._log.log(
-                f"扫描完成：共 {len(results)} 个文件，"
-                f"{tagged} 首已标记，{lyrics_found} 首有歌词，{errors} 首失败"
+            awaiting = sum(
+                1 for r in results
+                if r.status == ProcessingStatus.AWAITING_SELECTION
             )
+            parts = [f"{tagged} 首已标记", f"{lyrics_found} 首有歌词", f"{errors} 失败"]
+            if awaiting:
+                parts.append(f"{awaiting} 首等待选择")
+            self._log.set_status(f"完成：{'，'.join(parts)}")
+            self._log.set_progress(len(results), len(results))
+            self._log.log(f"扫描完成：共 {len(results)} 个文件，{'，'.join(parts)}")
             # Refresh table to show updated filenames.
             self._track_table.set_results(results)
 
@@ -152,6 +157,57 @@ class MainWindow(tb.Window):
             self._lyrics_viewer.set_lyrics(result.lyrics)
         else:
             self._lyrics_viewer.clear()
+
+        # If this file has fuzzy candidates awaiting selection, show the dialog.
+        if (
+            result.status == ProcessingStatus.AWAITING_SELECTION
+            and result.match_alternatives
+        ):
+            self._show_candidate_selection(result)
+
+    def _show_candidate_selection(self, result: TrackResult) -> None:
+        """弹出候选选择对话框，用户确认后继续管线处理。"""
+        dialog = CandidateSelectorDialog(
+            self,
+            candidates=result.match_alternatives,
+            filename=result.audio_file.path.name,
+        )
+
+        selected = dialog.selected_match
+        if selected is None:
+            self._log.log(f"已跳过：{result.audio_file.path.name}")
+            return
+
+        self._log.log(
+            f"已选择：{selected.artist} - {selected.title}"
+            f"（{selected.confidence:.0%}）"
+        )
+
+        async def _resume():
+            from audio_matcher.core.pipeline import Pipeline
+            pipeline = Pipeline(self.config)
+            await pipeline.resume_after_selection(result, selected)
+            return result
+
+        def _on_resumed(updated: TrackResult):
+            # Write tags.
+            tagger = AudioTagger(self.config)
+            try:
+                tagger.write(
+                    updated.audio_file, updated.match, updated.lyrics
+                )
+                updated.status = ProcessingStatus.TAGGED
+                self._log.log(f"标签已写入：{updated.audio_file.path.name}")
+                self._log.set_status(f"已标记：{updated.audio_file.path.name}")
+            except Exception as exc:
+                self._log.log(f"写入标签失败：{exc}")
+            # Refresh table and editor.
+            self._track_table.set_results(self._track_table.results)
+            self._tag_editor.load(updated)
+            if updated.lyrics:
+                self._lyrics_viewer.set_lyrics(updated.lyrics)
+
+        self._run_async(_resume(), _on_resumed)
 
     def _on_restore(self, path: Path) -> None:
         """Restore original filenames from _track_mapping.txt."""

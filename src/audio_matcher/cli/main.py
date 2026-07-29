@@ -22,8 +22,10 @@ from audio_matcher.core.models import (
     AudioFile,
     AudioFormat,
     MatchSource,
+    ProcessingStatus,
     SyncedLyrics,
     TrackMatch,
+    TrackResult,
 )
 from audio_matcher.utils.logging import setup_logging
 
@@ -134,6 +136,35 @@ async def _cmd_scan(args) -> None:
     from audio_matcher.cli.formatters import print_results_table
     print_results_table(results)
 
+    # Handle files awaiting candidate selection (always, even non-interactive).
+    awaiting = [
+        r for r in results
+        if r.status == ProcessingStatus.AWAITING_SELECTION
+    ]
+    if awaiting:
+        if args.interactive:
+            print(f"\n{len(awaiting)} file(s) need match selection.\n")
+            tagger = AudioTagger(config)
+            for r in awaiting:
+                selected = _prompt_candidate_selection(r)
+                if selected is not None:
+                    r.match = selected
+                    r.status = ProcessingStatus.RECOGNIZED
+                    if not args.dry_run:
+                        try:
+                            tagger.write(r.audio_file, r.match, r.lyrics)
+                            r.status = ProcessingStatus.TAGGED
+                            print(f"  ✓ Tagged: {r.audio_file.path.name}")
+                        except Exception as exc:
+                            print(f"  ✗ Write error: {exc}")
+            # Re-print updated table.
+            print_results_table(results)
+        else:
+            print(
+                f"\n{len(awaiting)} file(s) need match selection. "
+                f"Re-run with --interactive to choose."
+            )
+
     # Interactive mode: let user edit before writing.
     if args.interactive and results:
         _interactive_review(results, config)
@@ -206,6 +237,18 @@ def _interactive_review(results, config: Config) -> None:
     """Simple interactive prompt to edit results before writing."""
     print("\n── Interactive Review ──")
     for r in results:
+        # Handle AWAITING_SELECTION files that weren't already resolved.
+        if (
+            r.status == ProcessingStatus.AWAITING_SELECTION
+            and r.match_alternatives
+        ):
+            selected = _prompt_candidate_selection(r)
+            if selected:
+                r.match = selected
+                r.status = ProcessingStatus.RECOGNIZED
+            else:
+                continue
+
         if not r.match:
             continue
         print(f"\n{r.audio_file.path.name}")
@@ -231,6 +274,76 @@ def _interactive_review(results, config: Config) -> None:
             print(f"  ✓ Written")
         except Exception as exc:
             print(f"  ✗ Error: {exc}")
+
+
+def _prompt_candidate_selection(result: TrackResult) -> TrackMatch | None:
+    """Interactive prompt for selecting among fuzzy match candidates.
+
+    Returns the selected TrackMatch, or None if the user skips.
+    """
+    candidates = result.match_alternatives
+    if not candidates:
+        return None
+
+    print(f"\n── {result.audio_file.path.name} ──")
+    print("  Primary recognition failed. Fuzzy match candidates:")
+
+    # Try Rich table, fall back to plain text.
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        console = Console()
+        table = Table(show_header=True, box=None)
+        table.add_column("#", width=4)
+        table.add_column("Title", style="green")
+        table.add_column("Artist", style="yellow")
+        table.add_column("Album")
+        table.add_column("Confidence", justify="right")
+        table.add_column("Source")
+
+        for i, c in enumerate(candidates, 1):
+            table.add_row(
+                str(i),
+                c.title,
+                c.artist,
+                c.album or "—",
+                f"{c.confidence:.0%}",
+                c.source.value,
+            )
+        console.print(table)
+    except Exception:
+        for i, c in enumerate(candidates, 1):
+            print(
+                f"  [{i}] {c.artist} - {c.title} "
+                f"({c.album}) [{c.confidence:.0%}] via {c.source.value}"
+            )
+
+    while True:
+        choice = input(
+            f"  Select [1-{len(candidates)}], m=manual, s=skip: "
+        ).strip().lower()
+
+        if choice == "s":
+            return None
+        elif choice == "m":
+            title = input("    Title: ").strip()
+            artist = input("    Artist: ").strip()
+            if title or artist:
+                return TrackMatch(
+                    title=title,
+                    artist=artist,
+                    source=MatchSource.SHAZAM,
+                    confidence=1.0,
+                )
+            return None
+        else:
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(candidates):
+                    return candidates[idx]
+            except ValueError:
+                pass
+            print(f"  Invalid choice. Enter 1-{len(candidates)}, m, or s.")
 
 
 def _read_lyrics_input(source: str) -> str:

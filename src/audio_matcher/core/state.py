@@ -82,10 +82,14 @@ class StateManager:
             state.completed += 1
 
     def pending_files(self, state: BatchState) -> list[AudioFile]:
-        """Return files still PENDING or in ERROR (for retry)."""
+        """Return files still PENDING, in ERROR, or AWAITING_SELECTION (for retry)."""
         return [
             r.audio_file for r in state.results.values()
-            if r.status in (ProcessingStatus.PENDING, ProcessingStatus.ERROR)
+            if r.status in (
+                ProcessingStatus.PENDING,
+                ProcessingStatus.ERROR,
+                ProcessingStatus.AWAITING_SELECTION,
+            )
         ]
 
 
@@ -146,6 +150,19 @@ def _serialise_result(tr: TrackResult) -> dict:
         "lyrics_raw": tr.lyrics.raw_lrc if tr.lyrics else None,
         "lyrics_translated": tr.lyrics.translated_lrc if tr.lyrics else None,
         "lyrics_romanized": tr.lyrics.romanized_lrc if tr.lyrics else None,
+        "match_alternatives": [
+            {
+                "title": alt.title,
+                "artist": alt.artist,
+                "album": alt.album,
+                "year": alt.year,
+                "track_number": alt.track_number,
+                "confidence": alt.confidence,
+                "source": alt.source.value,
+                "source_id": alt.source_id,
+            }
+            for alt in (tr.match_alternatives or [])
+        ] if tr.match_alternatives else [],
     }
 
 
@@ -186,9 +203,25 @@ def _deserialise_result(data: dict) -> TrackResult:
             translated_lrc=data.get("lyrics_translated", ""),
             romanized_lrc=data.get("lyrics_romanized", ""),
         )
+    match_alternatives = []
+    if data.get("match_alternatives"):
+        for alt_data in data["match_alternatives"]:
+            match_alternatives.append(
+                TrackMatch(
+                    title=alt_data.get("title", ""),
+                    artist=alt_data.get("artist", ""),
+                    album=alt_data.get("album", ""),
+                    year=alt_data.get("year"),
+                    track_number=alt_data.get("track_number"),
+                    confidence=alt_data.get("confidence", 0.0),
+                    source=MatchSource(alt_data.get("source", "shazam")),
+                    source_id=alt_data.get("source_id", ""),
+                )
+            )
     return TrackResult(
         audio_file=af,
         match=match,
+        match_alternatives=match_alternatives,
         lyrics=lyrics,
         status=ProcessingStatus(data.get("status", "pending")),
         error=data.get("error"),

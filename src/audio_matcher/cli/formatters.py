@@ -27,19 +27,34 @@ def print_results_table(results: list[TrackResult]) -> None:
         ProcessingStatus.TAGGED: "[green]✓[/]",
         ProcessingStatus.RECOGNIZED: "[yellow]~[/]",
         ProcessingStatus.LYRICS_FETCHED: "[yellow]~[/]",
+        ProcessingStatus.AWAITING_SELECTION: "[yellow]?[/]",
         ProcessingStatus.ERROR: "[red]✗[/]",
         ProcessingStatus.PENDING: "[dim]?[/]",
     }
 
     for r in results:
         icon = status_icons.get(r.status, "?")
+        if r.match:
+            title = r.match.title
+            artist = r.match.artist
+            album = r.match.album or "—"
+            conf = f"{r.match.confidence:.0%}"
+        elif r.match_alternatives:
+            best = r.match_alternatives[0]
+            title = f"? {best.title}"
+            artist = f"? {best.artist}"
+            album = best.album or "—"
+            conf = f"({len(r.match_alternatives)})"
+        else:
+            title = artist = album = "—"
+            conf = "—"
         table.add_row(
             icon,
             r.audio_file.path.name,
-            r.match.title if r.match else "—",
-            r.match.artist if r.match else "—",
-            r.match.album if r.match else "—",
-            f"{r.match.confidence:.0%}" if r.match else "—",
+            title,
+            artist,
+            album,
+            conf,
         )
 
     console.print(table)

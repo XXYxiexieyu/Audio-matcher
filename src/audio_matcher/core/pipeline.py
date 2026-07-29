@@ -14,6 +14,7 @@ from typing import Callable, Optional
 from audio_matcher.core.cache import FingerprintCache, LyricsCache
 from audio_matcher.core.config import Config
 from audio_matcher.core.fingerprinter import FingerprintError, Fingerprinter
+from audio_matcher.core.fuzzy_matcher import FuzzyMatcher
 from audio_matcher.core.lyrics import LyricsFetcher
 from audio_matcher.core.models import (
     AudioFile,
@@ -188,9 +189,26 @@ class Pipeline:
                 result.match = match
                 result.status = ProcessingStatus.RECOGNIZED
             else:
-                result.status = ProcessingStatus.ERROR
-                result.error = "No match found"
-                return result
+                # Fuzzy fallback: try alternative fingerprint strategies.
+                logger.info(
+                    "Primary recognition failed for %s, attempting fuzzy matching...",
+                    file.path.name,
+                )
+                fuzzy = FuzzyMatcher(self.config)
+                candidates = await fuzzy.find_candidates(str(file.path))
+                if candidates:
+                    result.match_alternatives = candidates
+                    result.status = ProcessingStatus.AWAITING_SELECTION
+                    logger.info(
+                        "Fuzzy matching found %d candidate(s) for %s",
+                        len(candidates),
+                        file.path.name,
+                    )
+                    return result  # Pause — user must select before lyrics/tagging.
+                else:
+                    result.status = ProcessingStatus.ERROR
+                    result.error = "No match found (primary and fuzzy both failed)"
+                    return result
 
             # 3. Lyrics (always fetch unless explicitly disabled).
             if not no_lyrics and result.match and result.match.artist and result.match.title:
@@ -210,6 +228,49 @@ class Pipeline:
             result.error = str(exc)
             result.status = ProcessingStatus.ERROR
             logger.exception("Unexpected error processing %s", file.path.name)
+
+        return result
+
+    async def resume_after_selection(
+        self,
+        result: TrackResult,
+        selected_match: TrackMatch,
+        *,
+        no_lyrics: bool = False,
+    ) -> TrackResult:
+        """Resume pipeline for a file after the user selects a fuzzy match.
+
+        Sets result.match, fetches lyrics (unless *no_lyrics*), and returns
+        the updated result.  Tag writing is handled separately by the caller
+        (GUI / CLI).
+        """
+        result.match = selected_match
+        result.status = ProcessingStatus.RECOGNIZED
+
+        if (
+            not no_lyrics
+            and result.match.artist
+            and result.match.title
+        ):
+            fetcher = LyricsFetcher(self.config, cache=self.lyrics_cache)
+            try:
+                lyrics = await fetcher.fetch(result.match)
+                if lyrics and lyrics.lines:
+                    result.lyrics = lyrics
+                    result.status = ProcessingStatus.LYRICS_FETCHED
+                    logger.info(
+                        "Lyrics found for %s - %s",
+                        result.match.artist,
+                        result.match.title,
+                    )
+                else:
+                    logger.info(
+                        "No lyrics found for %s - %s",
+                        result.match.artist,
+                        result.match.title,
+                    )
+            except Exception as exc:
+                logger.debug("Lyrics fetch error: %s", exc)
 
         return result
 

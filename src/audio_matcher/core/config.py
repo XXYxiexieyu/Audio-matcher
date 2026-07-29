@@ -30,12 +30,18 @@ class Config:
     # ── MusicBrainz client identity ──────────────────────────────────────
 
     musicbrainz_app_name: str = "audio_matcher"
-    musicbrainz_app_version: str = "0.0.5"
+    musicbrainz_app_version: str = "0.0.6"
 
     # ── Recognition ──────────────────────────────────────────────────────
 
     shazamio_timeout: int = 30
     min_confidence: float = 0.3
+
+    # ── Fuzzy matching fallback ──────────────────────────────────────────
+
+    fuzzy_max_candidates: int = 10
+    fuzzy_segment_offsets: list[float] = field(default_factory=lambda: [30.0, 60.0, 120.0])
+    fuzzy_min_confidence: float = 0.15
 
     # ── Scanning ─────────────────────────────────────────────────────────
 
@@ -140,6 +146,9 @@ class Config:
             "rate_limit_rps": self.rate_limit_rps,
             "cache_dir": self.cache_dir,
             "state_dir": self.state_dir,
+            "fuzzy_max_candidates": self.fuzzy_max_candidates,
+            "fuzzy_segment_offsets": self.fuzzy_segment_offsets,
+            "fuzzy_min_confidence": self.fuzzy_min_confidence,
         }
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, ensure_ascii=False)

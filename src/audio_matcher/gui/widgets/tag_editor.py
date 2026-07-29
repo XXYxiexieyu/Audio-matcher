@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from audio_matcher.core.models import TrackResult
+from audio_matcher.core.models import MatchSource, TrackMatch, TrackResult
 
 
 class TagEditor(ttk.Frame):
@@ -63,12 +63,18 @@ class TagEditor(ttk.Frame):
     def load(self, result: TrackResult) -> None:
         """用 TrackResult 填充编辑器。"""
         self._current_result = result
-        if result.match:
-            self._entries["title"].set(result.match.title or "")
-            self._entries["artist"].set(result.match.artist or "")
-            self._entries["album"].set(result.match.album or "")
-            self._entries["year"].set(str(result.match.year) if result.match.year else "")
-            self._entries["track_number"].set(str(result.match.track_number) if result.match.track_number else "")
+        # Prefer confirmed match; fall back to best alternative for preview.
+        effective = result.match
+        if not effective and result.match_alternatives:
+            effective = result.match_alternatives[0]
+        if effective:
+            self._entries["title"].set(effective.title or "")
+            self._entries["artist"].set(effective.artist or "")
+            self._entries["album"].set(effective.album or "")
+            self._entries["year"].set(str(effective.year) if effective.year else "")
+            self._entries["track_number"].set(
+                str(effective.track_number) if effective.track_number else ""
+            )
         if self._lyrics_text:
             self._lyrics_text.delete("1.0", "end")
             if result.lyrics:
@@ -79,18 +85,23 @@ class TagEditor(ttk.Frame):
             self.load(self._current_result)
 
     def _on_write_clicked(self) -> None:
-        if self._current_result and self._current_result.match:
-            self._current_result.match.title = self._entries["title"].get()
-            self._current_result.match.artist = self._entries["artist"].get()
-            self._current_result.match.album = self._entries["album"].get()
-            try:
-                self._current_result.match.year = int(self._entries["year"].get())
-            except (ValueError, TypeError):
-                self._current_result.match.year = None
-            try:
-                self._current_result.match.track_number = int(self._entries["track_number"].get())
-            except (ValueError, TypeError):
-                self._current_result.match.track_number = None
-            self._current_result.edited = True
-            if self._on_write:
-                self._on_write(self._current_result)
+        if not self._current_result:
+            return
+        # If no match yet (e.g. AWAITING_SELECTION with manual edits),
+        # create one from the editor fields.
+        if not self._current_result.match:
+            self._current_result.match = TrackMatch(source=MatchSource.SHAZAM)
+        self._current_result.match.title = self._entries["title"].get()
+        self._current_result.match.artist = self._entries["artist"].get()
+        self._current_result.match.album = self._entries["album"].get()
+        try:
+            self._current_result.match.year = int(self._entries["year"].get())
+        except (ValueError, TypeError):
+            self._current_result.match.year = None
+        try:
+            self._current_result.match.track_number = int(self._entries["track_number"].get())
+        except (ValueError, TypeError):
+            self._current_result.match.track_number = None
+        self._current_result.edited = True
+        if self._on_write:
+            self._on_write(self._current_result)

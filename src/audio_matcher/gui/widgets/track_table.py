@@ -65,19 +65,35 @@ class TrackTable(ttk.Frame):
             ProcessingStatus.TAGGED: "✓",
             ProcessingStatus.RECOGNIZED: "~",
             ProcessingStatus.LYRICS_FETCHED: "~",
+            ProcessingStatus.AWAITING_SELECTION: "?",
             ProcessingStatus.ERROR: "✗",
             ProcessingStatus.PENDING: "...",
             ProcessingStatus.FINGERPRINTED: "...",
+            ProcessingStatus.SCANNED: "...",
         }
 
         for r in results:
+            if r.match:
+                title = r.match.title
+                artist = r.match.artist
+                album = r.match.album
+                confidence = f"{r.match.confidence:.0%}" if r.match.confidence else ""
+            elif r.match_alternatives:
+                best = r.match_alternatives[0]
+                title = f"? {best.title}"
+                artist = f"? {best.artist}"
+                album = best.album
+                confidence = f"({len(r.match_alternatives)} 候选)"
+            else:
+                title = artist = album = confidence = ""
+
             item_id = self._tree.insert("", "end", values=(
                 status_icons.get(r.status, "?"),
                 r.audio_file.path.name,
-                r.match.title if r.match else "",
-                r.match.artist if r.match else "",
-                r.match.album if r.match else "",
-                f"{r.match.confidence:.0%}" if r.match and r.match.confidence else "",
+                title,
+                artist,
+                album,
+                confidence,
             ))
             self._result_map[item_id] = r
 
@@ -95,3 +111,8 @@ class TrackTable(ttk.Frame):
         if selection:
             return self._result_map.get(selection[0])
         return None
+
+    @property
+    def results(self) -> list[TrackResult]:
+        """Return all results currently displayed in the table."""
+        return self._results

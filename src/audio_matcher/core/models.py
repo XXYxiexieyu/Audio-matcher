@@ -59,6 +59,7 @@ class ProcessingStatus(StrEnum):
     RECOGNIZED = "recognized"
     LYRICS_FETCHED = "lyrics_fetched"
     TAGGED = "tagged"
+    AWAITING_SELECTION = "awaiting_selection"
     ERROR = "error"
     SKIPPED = "skipped"
 
@@ -151,6 +152,7 @@ class TrackResult:
     audio_file: AudioFile
     fingerprint: Optional[Fingerprint] = None
     match: Optional[TrackMatch] = None
+    match_alternatives: list[TrackMatch] = field(default_factory=list)
     lyrics: Optional[SyncedLyrics] = None
     status: ProcessingStatus = ProcessingStatus.PENDING
     error: Optional[str] = None

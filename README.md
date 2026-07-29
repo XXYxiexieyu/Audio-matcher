@@ -1,4 +1,4 @@
-# Audio Matcher v0.0.5
+# Audio Matcher v0.0.6
 
 Batch audio file identification, metadata tagging, and synced lyrics (LRC) downloader.
 
@@ -58,6 +58,14 @@ python -m audio_matcher.gui.app
 | AIFF   | .aiff     | ID3v2    | USLT       |
 
 ## Changelog
+
+### v0.0.6 (2026-07-29)
+- **模糊识别降级**: 主识别 (Shazam) 失败时自动尝试 AcoustID 指纹匹配 + 多片段 Shazam 重试
+- **候选选择**: GUI 模态对话框 / CLI 交互式编号列表，用户从候选中选择正确匹配
+- **手动输入**: 候选不适用时可手动输入标题/艺人
+- **新状态 AWAITING_SELECTION**: 区分硬失败与待用户选择的中间状态
+- **状态文件兼容**: match_alternatives 可序列化/反序列化，支持断点续跑
+- 新增 `fuzzy_matcher.py` 核心模块 + 14 个测试用例（共计 77 tests）
 
 ### v0.0.5 (2026-07-29)
 - **文件选择**: 浏览目录后显示文件列表（复选框默认全选）+ 全选/全不选按钮
